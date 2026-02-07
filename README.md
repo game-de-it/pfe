@@ -2,6 +2,10 @@
 
 A retro-styled ROM launcher built with Pyxel, supporting multiple emulators and platforms.
 
+
+![demo](assets/images/img03.jpeg)  ![demo](assets/images/img04.jpeg)
+![demo](assets/images/img01.gif)  ![demo](assets/images/img02.gif)
+
 ## Features
 
 ### Core Features
