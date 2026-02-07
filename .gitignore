@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Pyxel
+.pyxel_cache/
+
+# Application Data
+data/favorites.json
+data/history.json
+data/core_history.json
+data/settings.json
+data/cache.json
+data/session.json
+
+# User-specific config (uncomment if you want to ignore personal configs)
+# data/pfe.cfg
+
+# ROM files (don't commit ROMs)
+*.chd
+*.bin
+*.cue
+*.iso
+*.cso
+*.pbp
+*.nes
+*.sfc
+*.smc
+*.gb
+*.gbc
+*.gba
+*.md
+*.gen
+*.n64
+*.z64
+*.v64
+
+# Screenshots
+assets/screenshots/*.png
+assets/screenshots/*.jpg
+assets/screenshots/*.jpeg
+
+# Logs
+*.log
+
+# Backup files
+*.bak
+*.backup

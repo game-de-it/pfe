@@ -1,0 +1,16 @@
+{
+  "name": "Light",
+  "colors": {
+    "background": 7,
+    "text": 0,
+    "text_selected": 8,
+    "border": 0,
+    "border_accent": 12,
+    "scrollbar": 12,
+    "status_bg": 13,
+    "help_bg": 13,
+    "error": 8,
+    "success": 11,
+    "info": 12
+  }
+}

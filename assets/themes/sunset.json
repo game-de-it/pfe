@@ -1,0 +1,16 @@
+{
+  "name": "Sunset",
+  "colors": {
+    "background": 4,
+    "text": 15,
+    "text_selected": 9,
+    "border": 9,
+    "border_accent": 10,
+    "scrollbar": 9,
+    "status_bg": 2,
+    "help_bg": 2,
+    "error": 8,
+    "success": 11,
+    "info": 9
+  }
+}

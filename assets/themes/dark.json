@@ -1,0 +1,16 @@
+{
+  "name": "Dark",
+  "colors": {
+    "background": 0,
+    "text": 7,
+    "text_selected": 10,
+    "border": 7,
+    "border_accent": 11,
+    "scrollbar": 11,
+    "status_bg": 1,
+    "help_bg": 1,
+    "error": 8,
+    "success": 11,
+    "info": 12
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Vampire",
+  "colors": {
+    "background": 0,
+    "text": 8,
+    "text_selected": 9,
+    "border": 8,
+    "border_accent": 2,
+    "scrollbar": 8,
+    "status_bg": 0,
+    "help_bg": 0,
+    "error": 8,
+    "success": 11,
+    "info": 9
+  }
+}

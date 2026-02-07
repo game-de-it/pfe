@@ -1,0 +1,4 @@
+pyxel==2.2.7
+Pillow>=10.0.0
+pyxel-universal-font>=0.2.0
+pygame>=2.0.0

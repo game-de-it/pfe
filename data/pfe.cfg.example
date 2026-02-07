@@ -1,0 +1,292 @@
+; ========================================
+; Pyxel ROM Launcher (PFE) Configuration
+; ========================================
+; This is a complete example configuration file with all available options.
+; Lines starting with ; are comments and will be ignored.
+
+; ========================================
+; Global Variables
+; ========================================
+
+; ROM_BASE: Base directory where ROM files are stored
+; All relative -DIR paths will be relative to this directory
+; Example: ROM_BASE=/roms
+ROM_BASE=/roms
+
+; ========================================
+; Emulator/Launcher Definitions
+; ========================================
+; PFE delegates ROM launching to external scripts.
+; This allows flexible configuration for different systems.
+
+; TYPE_RA: RetroArch launcher script
+; Receives: <core_filename> <rom_path>
+; Example: ./bin/retroarch.sh nestopia_libretro.so /roms/nes/game.nes
+; Relative paths are resolved from PFE's directory
+TYPE_RA=./bin/retroarch.sh
+
+; TYPE_SA_*: Standalone emulator scripts
+; Receives: <rom_path>
+; Example: /usr/local/bin/yabasanshiro.sh /roms/saturn/game.cue
+; Use with SA:NAME in -CORE (e.g., SA:YABASANSHIRO)
+;TYPE_SA_YABASANSHIRO=/usr/local/bin/yabasanshiro.sh
+;TYPE_SA_PPSSPP=/usr/local/bin/ppsspp.sh
+;TYPE_SA_DRASTIC=/usr/local/bin/drastic.sh
+
+; Legacy emulator types (still supported for backward compatibility)
+;TYPE_PPSSPP=/usr/local/bin/ppsspp
+
+; CORE_PATH: (DEPRECATED) Directory containing RetroArch cores
+; This setting is no longer used. Core paths should be handled
+; by your retroarch.sh script instead.
+;CORE_PATH=/home/ark/.config/retroarch/cores
+
+; ========================================
+; UI Settings
+; ========================================
+
+; FONT_PATH: Path to custom TrueType font file
+; Used for Japanese text rendering
+; If not specified, uses default font
+; Example: FONT_PATH=/usr/share/fonts/truetype/misaki/misaki_gothic.ttf
+;FONT_PATH=/usr/share/fonts/truetype/misaki/misaki_gothic.ttf
+
+; SPLASH_TIME: Splash screen display duration in seconds
+; Range: 1-5 seconds
+; Default: 3 seconds
+; The splash image (assets/splash.png or .jpg) will be displayed for this duration
+; Press any button to skip immediately
+;SPLASH_TIME=3
+
+; ========================================
+; Debug Settings
+; ========================================
+
+; DEBUG: Enable debug logging
+; Options: true or false
+; When enabled, shows detailed logs for troubleshooting
+; Default: false
+DEBUG=false
+
+; ========================================
+; System Monitor Settings
+; ========================================
+
+; SHOW_TIME: Display time in top-right corner
+; Options: true or false
+; Default: true
+;SHOW_TIME=true
+
+; SHOW_BATTERY: Display battery level in top-right corner
+; Options: true or false
+; Default: true
+;SHOW_BATTERY=true
+
+; SHOW_NETWORK: Display network status in top-right corner
+; Options: true or false
+; Default: true
+;SHOW_NETWORK=true
+
+; BATTERY_PATH: Path to battery capacity file
+; If not specified, will try common paths automatically
+; Example: BATTERY_PATH=/sys/class/power_supply/battery/capacity
+;BATTERY_PATH=/sys/class/power_supply/axp20x-battery/capacity
+
+; CPU_GOVERNOR_PATH: Path to CPU governor scaling file
+; If not specified, will try common paths automatically:
+;   - /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+;   - /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+; Available governors: ondemand, performance
+; Example: CPU_GOVERNOR_PATH=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+;CPU_GOVERNOR_PATH=
+
+; ========================================
+; WiFi Settings
+; ========================================
+
+; WIFI_INTERFACE: WiFi interface name
+; Used for WiFi operations
+; Default: wlan0
+;WIFI_INTERFACE=wlan0
+
+; WIFI_SCAN_SCRIPT: Script for WiFi scanning
+; The script should output SSID names, one per line
+; Default scripts are provided in the scripts/ directory
+WIFI_SCAN_SCRIPT=./scripts/wifi_scan.sh
+
+; WIFI_CONNECT_SCRIPT: Script for WiFi connection
+; The script receives two arguments: SSID and PASSWORD
+; Usage: wifi_connect.sh "SSID" "password"
+WIFI_CONNECT_SCRIPT=./scripts/wifi_connect.sh
+
+; WIFI_STATUS_SCRIPT: Script to get WiFi radio status
+; The script should output "enabled" or "disabled"
+WIFI_STATUS_SCRIPT=./scripts/wifi_status.sh
+
+; WIFI_TOGGLE_SCRIPT: Script to toggle WiFi radio ON/OFF
+; The script receives one argument: "on" or "off"
+; Usage: wifi_toggle.sh on
+WIFI_TOGGLE_SCRIPT=./scripts/wifi_toggle.sh
+
+; ========================================
+; System Monitor Scripts
+; ========================================
+; These scripts are called by the system monitor for battery and network status.
+; Default scripts are provided in the scripts/ directory.
+; Customize these for non-standard hardware or different OS.
+
+; BATTERY_SCRIPT: Script to get battery level and status
+; Output format: "<capacity> <status>" (e.g., "85 Charging")
+; If no battery, output nothing
+BATTERY_SCRIPT=./scripts/get_battery.sh
+
+; NETWORK_SCRIPT: Script to check network connectivity
+; Output: "connected" or "disconnected"
+NETWORK_SCRIPT=./scripts/get_network.sh
+
+; CPU_GOVERNOR_GET_SCRIPT: Script to get current CPU governor
+; Output: governor name (e.g., "ondemand", "performance")
+CPU_GOVERNOR_GET_SCRIPT=./scripts/get_cpu_governor.sh
+
+; CPU_GOVERNOR_SET_SCRIPT: Script to set CPU governor
+; Receives one argument: governor name
+; Usage: set_cpu_governor.sh performance
+CPU_GOVERNOR_SET_SCRIPT=./scripts/set_cpu_governor.sh
+
+; ========================================
+; System Power Scripts
+; ========================================
+; These scripts handle system reboot and shutdown.
+; They should handle sudo/privilege escalation internally.
+
+; REBOOT_SCRIPT: Script to reboot the system
+REBOOT_SCRIPT=./scripts/system_reboot.sh
+
+; SHUTDOWN_SCRIPT: Script to shut down the system
+SHUTDOWN_SCRIPT=./scripts/system_shutdown.sh
+
+; ========================================
+; Category Definitions
+; ========================================
+; Each category defines a game system with its ROMs and launchers.
+;
+; Required fields:
+; -TITLE: Display name (supports Japanese/Unicode)
+; -DIR: Directory path (absolute or relative to ROM_BASE)
+; -EXT: Comma-separated list of file extensions (no dots)
+; -CORE: Comma-separated list of cores/launchers
+;
+; -CORE format:
+;   corename           -> RetroArch core (implicit RA:)
+;   SA:EMULATOR_NAME   -> Standalone emulator (uses TYPE_SA_EMULATOR_NAME)
+;
+; Core name conversion:
+;   nestopia           -> nestopia_libretro.so (suffix added if no underscore)
+;   nestopia_libretro.dylib -> as-is (kept if has underscore)
+;
+; Notes:
+; - If -DIR starts with '/', it's treated as absolute path
+; - Otherwise, ROM_BASE/{dir_name} is used
+; - Multiple cores/launchers can be specified, user selects at runtime
+
+; ========================================
+; Nintendo Entertainment System
+; ========================================
+; Example with Japanese title and multiple RetroArch cores
+-TITLE=ファミコン
+-DIR=nes
+-EXT=nes,unf,fds
+-CORE=nestopia,fceumm
+
+; ========================================
+; Super Nintendo Entertainment System
+; ========================================
+-TITLE=スーファミ
+-DIR=snes
+-EXT=sfc,smc
+-CORE=snes9x,bsnes
+
+; ========================================
+; Sega Saturn
+; ========================================
+; Example with both RetroArch core and standalone emulator
+; Requires TYPE_SA_YABASANSHIRO to be defined above
+;-TITLE=サターン
+;-DIR=saturn
+;-EXT=cue,bin,chd
+;-CORE=yabasanshiro,SA:YABASANSHIRO
+
+; ========================================
+; PlayStation Portable
+; ========================================
+; Example with standalone emulator only
+; Requires TYPE_SA_PPSSPP to be defined above
+;-TITLE=PSP
+;-DIR=psp
+;-EXT=iso,cso,pbp
+;-CORE=SA:PPSSPP
+
+; ========================================
+; Game Boy / Game Boy Color
+; ========================================
+-TITLE=Game Boy
+-DIR=gb
+-EXT=gb,gbc
+-CORE=gambatte,sameboy
+
+; ========================================
+; Game Boy Advance
+; ========================================
+-TITLE=GBA
+-DIR=gba
+-EXT=gba
+-CORE=mgba,vba_next
+
+; ========================================
+; Sega Genesis / Mega Drive
+; ========================================
+-TITLE=メガドライブ
+-DIR=megadrive
+-EXT=md,bin,gen
+-CORE=genesis_plus_gx,picodrive
+
+; ========================================
+; Nintendo 64
+; ========================================
+-TITLE=NINTENDO64
+-DIR=n64
+-EXT=n64,z64,v64
+-CORE=mupen64plus_next,parallel_n64
+
+; ========================================
+; PlayStation 1
+; ========================================
+-TITLE=PlayStation
+-DIR=ps1
+-EXT=chd,bin,cue,pbp
+-CORE=pcsx_rearmed
+
+; ========================================
+; Advanced Examples
+; ========================================
+
+; Example: Mixed RetroArch and standalone
+; User can choose between RetroArch core or standalone emulator
+;TYPE_SA_FLYCAST=/usr/local/bin/flycast.sh
+;-TITLE=Dreamcast
+;-DIR=dreamcast
+;-EXT=cdi,gdi,chd,cue
+;-CORE=flycast,SA:FLYCAST
+
+; Example: Core with explicit filename (for non-.so cores)
+;-TITLE=PC Engine
+;-DIR=pce
+;-EXT=pce,cue
+;-CORE=mednafen_pce_fast_libretro.dylib
+
+; Example: Standalone only (no RetroArch)
+;TYPE_SA_DUCKSTATION=/usr/local/bin/duckstation.sh
+;-TITLE=PlayStation (DuckStation)
+;-DIR=ps1
+;-EXT=chd,bin,cue
+;-CORE=SA:DUCKSTATION

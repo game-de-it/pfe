@@ -1,0 +1,16 @@
+{
+  "name": "Matrix",
+  "colors": {
+    "background": 0,
+    "text": 11,
+    "text_selected": 3,
+    "border": 11,
+    "border_accent": 3,
+    "scrollbar": 11,
+    "status_bg": 0,
+    "help_bg": 0,
+    "error": 8,
+    "success": 11,
+    "info": 11
+  }
+}

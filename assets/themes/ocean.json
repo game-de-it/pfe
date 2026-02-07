@@ -1,0 +1,16 @@
+{
+  "name": "Ocean",
+  "colors": {
+    "background": 1,
+    "text": 6,
+    "text_selected": 12,
+    "border": 12,
+    "border_accent": 6,
+    "scrollbar": 12,
+    "status_bg": 5,
+    "help_bg": 5,
+    "error": 8,
+    "success": 11,
+    "info": 12
+  }
+}

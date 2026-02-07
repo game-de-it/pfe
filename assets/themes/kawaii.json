@@ -1,0 +1,16 @@
+{
+  "name": "Kawaii",
+  "colors": {
+    "background": 15,
+    "text": 8,
+    "text_selected": 14,
+    "border": 14,
+    "border_accent": 10,
+    "scrollbar": 14,
+    "status_bg": 7,
+    "help_bg": 7,
+    "error": 8,
+    "success": 11,
+    "info": 14
+  }
+}

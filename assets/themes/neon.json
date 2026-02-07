@@ -1,0 +1,16 @@
+{
+  "name": "Neon",
+  "colors": {
+    "background": 0,
+    "text": 14,
+    "text_selected": 6,
+    "border": 14,
+    "border_accent": 6,
+    "scrollbar": 6,
+    "status_bg": 1,
+    "help_bg": 1,
+    "error": 8,
+    "success": 11,
+    "info": 6
+  }
+}

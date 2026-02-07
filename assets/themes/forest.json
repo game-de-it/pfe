@@ -1,0 +1,16 @@
+{
+  "name": "Forest",
+  "colors": {
+    "background": 3,
+    "text": 7,
+    "text_selected": 10,
+    "border": 11,
+    "border_accent": 10,
+    "scrollbar": 11,
+    "status_bg": 5,
+    "help_bg": 5,
+    "error": 8,
+    "success": 11,
+    "info": 11
+  }
+}

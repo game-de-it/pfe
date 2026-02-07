@@ -1,0 +1,16 @@
+{
+  "name": "Sakura",
+  "colors": {
+    "background": 0,
+    "text": 14,
+    "text_selected": 15,
+    "border": 14,
+    "border_accent": 2,
+    "scrollbar": 14,
+    "status_bg": 0,
+    "help_bg": 0,
+    "error": 8,
+    "success": 11,
+    "info": 15
+  }
+}
