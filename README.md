@@ -1,4 +1,4 @@
-# Pyxel ROM Launcher (PFE)
+# pyxel frontend for emulator (PFE)
 
 A retro-styled ROM launcher built with Pyxel, supporting multiple emulators and platforms.
 

@@ -62,7 +62,6 @@ data/session.json
 *.gb
 *.gbc
 *.gba
-*.md
 *.gen
 *.n64
 *.z64
