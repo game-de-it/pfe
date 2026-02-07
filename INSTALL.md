@@ -1,113 +1,114 @@
-# インストール手順
+# Installation Instructions
 
-## 必要なもの
+## Requirements
 
-- Python 3.8以降
-- pip
-- RetroArch（またはPPSSPP等のエミュレータ）
+* Python 3.8 or higher
+* pip
+* RetroArch (or other emulators such as PPSSPP)
 
-## 手順
+## Steps
 
-### 1. 依存関係のインストール
+### 1. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-または個別にインストール:
+Or install individually:
 
 ```bash
 pip install pyxel>=2.2.7
 pip install Pillow>=10.0.0
 pip install pyxel-universal-font>=0.2.0
-pip install pygame>=2.0.0  # BGM再生用
+pip install pygame>=2.0.0  # for BGM playback
 ```
 
-### 2. 設定ファイルの準備
+### 2. Prepare Configuration File
 
-サンプル設定ファイルをコピー:
+Copy the sample configuration file:
 
 ```bash
 cp data/pfe.cfg.example data/pfe.cfg
 ```
 
-`data/pfe.cfg` を編集してROMディレクトリとエミュレータパスを設定:
+Edit `data/pfe.cfg` to set the ROM directory and emulator paths:
 
 ```ini
-; グローバル設定
+; Global settings
 ROM_BASE=/path/to/your/roms
 
-; エミュレータ設定
-; TYPE_RA: RetroArchランチャースクリプト（<core_filename> <rom_path>を受け取る）
+; Emulator settings
+; TYPE_RA: RetroArch launcher script (receives <core_filename> <rom_path>)
 TYPE_RA=./bin/retroarch.sh
 
-; TYPE_SA_*: スタンドアローンエミュレータ（<rom_path>のみ受け取る）
+; TYPE_SA_*: Standalone emulator (receives <rom_path> only)
 ;TYPE_SA_PPSSPP=/usr/local/bin/ppsspp.sh
 
-; デバッグ（問題がある場合はtrueに）
+; Debug (set to true if issues occur)
 DEBUG=false
 
-; カテゴリ定義
--TITLE=ファミコン
+; Category definitions
+-TITLE=Famicom
 -DIR=nes
 -EXT=nes,fds
 -CORE=nestopia,fceumm
 
--TITLE=スーファミ
+-TITLE=Super Famicom
 -DIR=snes
 -EXT=sfc,smc
 -CORE=snes9x
 
-; スタンドアローンエミュレータの例
+; Example of standalone emulator
 ;-TITLE=PSP
 ;-DIR=psp
 ;-EXT=iso,cso,pbp
 ;-CORE=SA:PPSSPP
 ```
 
-詳細な設定オプションは `data/pfe.cfg.example` を参照してください。
+For detailed configuration options, see `data/pfe.cfg.example`.
 
-### 2.5. ランチャースクリプトの準備
+### 2.5. Prepare Launcher Scripts
 
-PFEは外部スクリプトを通じてエミュレータを起動します。
+PFE launches emulators via external scripts.
 
-#### RetroArch用スクリプト例 (`bin/retroarch.sh`)
+#### Example Script for RetroArch (`bin/retroarch.sh`)
 
 ```bash
 #!/bin/bash
-# 引数: $1=コアファイル名, $2=ROMパス
+# Args: $1=core filename, $2=ROM path
 CORE_PATH="/path/to/retroarch/cores"
 retroarch -L "${CORE_PATH}/$1" "$2"
 ```
 
-#### スタンドアローンエミュレータ用スクリプト例
+#### Example Script for Standalone Emulator
 
 ```bash
 #!/bin/bash
-# 引数: $1=ROMパス
+# Args: $1=ROM path
 /usr/local/bin/ppsspp "$1"
 ```
 
-スクリプトに実行権限を付与:
+Give scripts executable permission:
+
 ```bash
 chmod +x bin/retroarch.sh
 ```
 
-#### WiFi/システム用スクリプト
+#### WiFi / System Scripts
 
-PFEには以下のスクリプトが同梱されています:
+PFE includes the following scripts:
 
 ```
 scripts/
-├── wifi_scan.sh        # WiFiネットワークスキャン
-├── wifi_connect.sh     # WiFi接続
-├── wifi_status.sh      # WiFi電源状態取得
-├── wifi_toggle.sh      # WiFi電源ON/OFF
-├── get_brightness.sh   # 画面輝度取得
-└── set_brightness.sh   # 画面輝度設定
+├── wifi_scan.sh        # Scan WiFi networks
+├── wifi_connect.sh     # Connect to WiFi
+├── wifi_status.sh      # Get WiFi power status
+├── wifi_toggle.sh      # Turn WiFi ON/OFF
+├── get_brightness.sh   # Get screen brightness
+└── set_brightness.sh   # Set screen brightness
 ```
 
-これらのスクリプトは`data/pfe.cfg`で設定されています:
+These scripts are configured in `data/pfe.cfg`:
 
 ```ini
 WIFI_SCAN_SCRIPT=./scripts/wifi_scan.sh
@@ -116,198 +117,215 @@ WIFI_STATUS_SCRIPT=./scripts/wifi_status.sh
 WIFI_TOGGLE_SCRIPT=./scripts/wifi_toggle.sh
 ```
 
-環境に合わせてスクリプトをカスタマイズすることも可能です。
+You can also customize the scripts according to your environment.
 
-### 3. アセットの準備（オプション）
+### 3. Prepare Assets (Optional)
 
-#### スプラッシュ画像
-`assets/splash.png` または `assets/splash.jpg` を配置すると起動時に表示されます。
+#### Splash Image
+
+Place `assets/splash.png` or `assets/splash.jpg` to display at startup.
 
 #### BGM
-`assets/bgm.mp3` を配置するとBGMが再生されます。Settings画面でON/OFF切替可能です。
 
-#### スクリーンショット
-ROM選択画面でスクリーンショットを表示するには:
+Place `assets/bgm.mp3` to enable BGM playback. Can be toggled On/Off in the Settings screen.
+
+#### Screenshots
+
+To display screenshots in the ROM selection screen:
+
 ```
 assets/screenshots/
 ├── nes/
-│   ├── Game Name.png  # ROMファイル名と同じ名前
+│   ├── Game Name.png  # same name as ROM file
 │   └── ...
 ├── snes/
 │   └── ...
 ```
 
-#### カスタムフォント
-日本語フォントを使用する場合:
-- フォントファイルを `assets/fonts/` に配置
-- `data/pfe.cfg` に追加: `FONT_PATH=assets/fonts/your-font.ttf`
+#### Custom Fonts
 
-推奨フォント:
-- 美咲フォント (8x8): http://littlelimit.net/misaki.htm
-- Noto Sans CJK: https://fonts.google.com/noto/specimen/Noto+Sans+JP
+To use Japanese fonts:
 
-### 4. 起動
+* Place font files in `assets/fonts/`
+* Add to `data/pfe.cfg`: `FONT_PATH=assets/fonts/your-font.ttf`
 
-#### 推奨: 自動再起動スクリプト
+Recommended fonts:
+
+* Misaki Font (8x8): [http://littlelimit.net/misaki.htm](http://littlelimit.net/misaki.htm)
+* Noto Sans CJK: [https://fonts.google.com/noto/specimen/Noto+Sans+JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP)
+
+### 4. Launch
+
+#### Recommended: Auto-Restart Script
 
 ```bash
 chmod +x launcher.sh
 ./launcher.sh
 ```
 
-ゲーム終了後に自動的にランチャーに戻ります。
+Returns to the launcher automatically after the game ends.
 
-#### 直接起動（手動再起動が必要）
+#### Direct Launch (Manual Restart Required)
 
 ```bash
 python3 main.py
 ```
 
-## Linux（組み込み機器）向け設定
+## Linux (Embedded) Settings
 
-### launcher.shの設定
+### launcher.sh Configuration
 
-ALSAオーディオを使用する場合、`launcher.sh`で環境変数を設定:
+If using ALSA audio, set environment variables in `launcher.sh`:
 
 ```bash
 export SDL_AUDIODRIVER=alsa
-export SDL_GAMECONTROLLERCONFIG="..."  # コントローラー設定
+export SDL_GAMECONTROLLERCONFIG="..."  # Controller configuration
 ```
 
-### 自動起動設定
+### Auto-Start Setup
 
-システム起動時に自動的にランチャーを起動するには:
+To start the launcher automatically at system startup:
 
 ```bash
-# ~/.bashrc または /etc/rc.local に追加
+# Add to ~/.bashrc or /etc/rc.local
 cd /path/to/pd && ./launcher.sh
 ```
 
 ### CPU Governor
 
-CPUガバナーを変更するには、ファイルへの書き込み権限が必要です:
+Changing CPU governor requires write permissions to system files:
 
 ```bash
-# 権限確認
+# Check permissions
 ls -la /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 
-# 必要に応じてudevルールを追加
+# Add udev rules if necessary
 ```
 
-### WiFi設定の権限
+### WiFi Permission
 
-一般ユーザーでWiFi接続を行うには、nmcliのsudo権限が必要です:
+To connect to WiFi as a normal user, sudo permission for nmcli is required:
 
 ```bash
 echo "ark ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/wifi
 sudo chmod 440 /etc/sudoers.d/wifi
 ```
 
-### 再起動/シャットダウンの権限
+### Reboot / Shutdown Permission
 
-一般ユーザーでシステムの再起動/シャットダウンを行うには:
+To allow a normal user to reboot/shutdown:
 
 ```bash
 echo "ark ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /sbin/reboot, /sbin/poweroff" | sudo tee /etc/sudoers.d/power
 sudo chmod 440 /etc/sudoers.d/power
 ```
 
-**注意**: `ark`を実際のユーザー名に置き換えてください。
+**Note**: Replace `ark` with your actual username.
 
-## トラブルシューティング
+## Troubleshooting
 
-### pyxel-universal-fontがインストールできない
+### pyxel-universal-font Cannot Be Installed
 
 ```bash
 pip install --upgrade pip
 pip install pyxel-universal-font
 ```
 
-### BGMが再生されない
+### BGM Does Not Play
 
-1. pygameがインストールされているか確認:
+1. Check if pygame is installed:
+
    ```bash
    pip install pygame
    ```
 
-2. `launcher.sh`で`SDL_AUDIODRIVER`がexportされているか確認:
+2. Confirm `SDL_AUDIODRIVER` is exported in `launcher.sh`:
+
    ```bash
    export SDL_AUDIODRIVER=alsa
    ```
 
-3. `assets/bgm.mp3`が存在するか確認
+3. Confirm `assets/bgm.mp3` exists
 
-4. Settings画面でBGMがOnになっているか確認
+4. Make sure BGM is On in the Settings screen
 
-### フォントが表示されない
+### Font Does Not Display
 
-1. フォントパスが正しいか確認
-2. フォントファイルが存在するか確認
-3. `DEBUG=true`にして起動時のログを確認
+1. Check the font path
+2. Confirm font file exists
+3. Set `DEBUG=true` and check startup logs
 
-### 画面が表示されない
+### Screen Does Not Display
 
-1. Pyxelが正しくインストールされているか確認
-2. グラフィックドライバが最新か確認
-3. SDLの環境変数を確認
+1. Confirm Pyxel is installed correctly
+2. Check graphics driver is up-to-date
+3. Verify SDL environment variables
 
-### ゲーム起動後に前の画面に戻らない
+### Launcher Does Not Return After Game
 
-1. `launcher.sh`を使用しているか確認
-2. セッションファイル（`data/session.json`）の権限を確認
+1. Make sure using `launcher.sh`
+2. Check permissions of session file (`data/session.json`)
 
-### CPU Governorが変更できない
+### Cannot Change CPU Governor
 
-1. パスが正しいか確認:
+1. Check path:
+
    ```bash
    cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
    ```
 
-2. `pfe.cfg`で`CPU_GOVERNOR_PATH`を設定:
+2. Set `CPU_GOVERNOR_PATH` in `pfe.cfg`:
+
    ```ini
    CPU_GOVERNOR_PATH=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
    ```
 
-3. ファイルへの書き込み権限を確認
+3. Confirm write permissions to the file
 
-### WiFi接続に失敗する
+### WiFi Connection Fails
 
-1. デバッグログを確認:
+1. Check debug log:
+
    ```bash
    cat data/debug.log
    ```
 
-2. nmcliが動作するか確認:
+2. Verify nmcli works:
+
    ```bash
    nmcli device wifi list
    ```
 
-3. 権限エラーの場合、sudoers設定を追加（上記「WiFi設定の権限」参照）
+3. Add sudoers rule if permission error occurs (see WiFi Permission above)
 
-4. `Insufficient privileges`エラーが出る場合:
-   - systemdサービス経由で実行している場合に発生
-   - sudoers設定が必要
+4. If `Insufficient privileges` appears:
 
-### 再起動/シャットダウンが動作しない
+   * Happens when running via systemd service
+   * sudoers configuration is required
 
-1. デバッグログを確認:
+### Reboot / Shutdown Does Not Work
+
+1. Check debug log:
+
    ```bash
    tail -20 data/debug.log
    ```
 
-2. 権限エラーの場合、sudoers設定を追加（上記「再起動/シャットダウンの権限」参照）
+2. Add sudoers rule if permission error occurs (see Reboot / Shutdown Permission above)
 
-### デバッグログの確認
+### Checking Debug Logs
 
-`DEBUG=true`を設定すると、`data/debug.log`にログが出力されます:
+Setting `DEBUG=true` outputs logs to `data/debug.log`:
 
 ```bash
-# リアルタイムでログを確認
+# Check logs in real-time
 tail -f data/debug.log
 
-# 最新のログを確認
+# Check latest log
 cat data/debug.log
 ```
 
-systemdサービスとして実行している場合、コンソールにログが表示されないため、
-ファイルログが問題の診断に役立ちます。
+If running as a systemd service, logs may not appear in the console, so file logs are useful for diagnosing issues.
+
+---
+
