@@ -195,6 +195,12 @@ sort_screenshots_by_content_enable = "true"
 
 この補正を行いたくない場合は、SSHなどから `02_install_pfe.sh --no-ra-screenshot` を実行します。
 
+また、ROCKNIXの小型画面でもRetroArchメニューを読みやすくするため、`02_install_pfe.sh` は次の設定も書き込みます。
+
+```ini
+menu_driver = "rgui"
+```
+
 ## Ports実行時の画面表示
 
 `01_install_pyxel.sh` と `02_install_pfe.sh` は、EmulationStationのPortsから実行された場合、ROCKNIX上の `foot` ターミナルを開いて作業ログを表示します。
@@ -327,7 +333,7 @@ PFEの設定や起動スクリプトを古い状態から更新した場合は�
 次の順に確認します。
 
 ```sh
-grep -n 'auto_screenshot_filename\|screenshots_in_content_dir\|sort_screenshots_by_content_enable' /storage/.config/retroarch/retroarch.cfg
+grep -n 'auto_screenshot_filename\|screenshots_in_content_dir\|sort_screenshots_by_content_enable\|menu_driver' /storage/.config/retroarch/retroarch.cfg
 ls -la /roms/screenshots/nes
 ```
 

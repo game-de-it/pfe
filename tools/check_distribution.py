@@ -27,6 +27,7 @@ MARKDOWN_FILES = (
     "docs/RELEASE_JP.md",
     "docs/ROCKNIX_JP.md",
     "docs/releases/v1.0.0.md",
+    "docs/releases/v1.0.1.md",
     "tools/rocknix/README_JP.md",
 )
 
@@ -193,6 +194,9 @@ class Checker:
             for marker in ("install_pfe_requirements", "validate_pfe_python", "--no-deps"):
                 if marker not in text:
                     self.fail(f"{relative}: missing PFE dependency safety marker: {marker}")
+            for marker in ("configure_retroarch_menu", "menu_driver", '"rgui"'):
+                if marker not in text:
+                    self.fail(f"{relative}: missing RetroArch menu readability marker: {marker}")
 
         switchers = (
             "tools/rocknix/ports/Switch_to_PFE.sh",

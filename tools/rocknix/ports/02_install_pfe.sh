@@ -195,6 +195,31 @@ configure_retroarch_screenshots() {
     }
 }
 
+configure_retroarch_menu() {
+    cfg_dir=$(dirname "$RETROARCH_CFG")
+    mkdir -p "$cfg_dir" 2>/dev/null || {
+        echo "WARNING: Could not create RetroArch config directory: $cfg_dir" >&2
+        return 0
+    }
+
+    if [ ! -f "$RETROARCH_CFG" ]; then
+        : > "$RETROARCH_CFG" 2>/dev/null || {
+            echo "WARNING: Could not create RetroArch config: $RETROARCH_CFG" >&2
+            return 0
+        }
+    fi
+
+    if [ -f "$RETROARCH_CFG" ] && [ ! -f "$RETROARCH_CFG.pfe-bak" ]; then
+        cp "$RETROARCH_CFG" "$RETROARCH_CFG.pfe-bak" 2>/dev/null || true
+    fi
+
+    echo "Configuring RetroArch menu settings in $RETROARCH_CFG ..."
+    set_retroarch_config_value "$RETROARCH_CFG" menu_driver '"rgui"' || {
+        echo "WARNING: Failed to set menu_driver in $RETROARCH_CFG" >&2
+        return 0
+    }
+}
+
 validate_pfe_tree() {
     [ -r "$PFE_DIR/launcher.sh" ] || {
         echo "ERROR: launcher.sh is not readable: $PFE_DIR/launcher.sh" >&2
@@ -324,6 +349,7 @@ install_pfe_requirements
 validate_pfe_python
 
 configure_retroarch_screenshots
+configure_retroarch_menu
 
 mkdir -p "$UNIT_DIR"
 

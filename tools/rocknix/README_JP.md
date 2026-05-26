@@ -143,7 +143,7 @@ chmod +x 02_install_pfe.sh Switch_to_PFE.sh
 
 `02_install_pfe.sh` とPFEの `launcher.sh` は、`/roms/pfe` や `/storage/pfe` などの実機配置先では起動時に `chmod -R 755` を実行します。ZIP展開やコピー直後に実行権限が落ちていても、WiFi、Bluetooth、電源操作などの同梱スクリプトが実行できる状態へ補正します。無効化したい場合は、`/storage/.config/pfe/pfe.env` などで `PFE_FIX_PERMISSIONS=false` を指定します。
 
-インストール時にはRetroArchのスクリーンショット設定もPFE向けに補正します。`/storage/.config/retroarch/retroarch.cfg` の `auto_screenshot_filename`、`screenshots_in_content_dir`、`sort_screenshots_by_content_enable` を更新し、RetroArchで撮ったスクリーンショットがPFEのギャラリーで拾いやすい命名になります。この補正をスキップしたい場合は `--no-ra-screenshot` を指定します。
+インストール時にはRetroArchの設定もPFE向けに補正します。`/storage/.config/retroarch/retroarch.cfg` の `auto_screenshot_filename`、`screenshots_in_content_dir`、`sort_screenshots_by_content_enable` を更新し、RetroArchで撮ったスクリーンショットがPFEのギャラリーで拾いやすい命名にします。さらに、小型画面でもRetroArchメニューを読みやすくするため `menu_driver = "rgui"` も設定します。スクリーンショット設定の補正をスキップしたい場合は `--no-ra-screenshot` を指定します。
 
 PFEを起動時のフロントエンドにしたい場合:
 
