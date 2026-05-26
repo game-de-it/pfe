@@ -1,14 +1,14 @@
 """
 Search screen for finding ROMs by name.
 """
-from theme_manager import get_theme_manager
+from pfe_app.theme_manager import get_theme_manager
 
 import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText
 from ui.window import DQWindow
-from rom_manager import ROMFile
-from japanese_text import draw_japanese_text
+from pfe_app.rom_manager import ROMFile
+from pfe_app.japanese_text import draw_japanese_text
 from typing import List
 
 
@@ -82,8 +82,8 @@ class Search(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
-        from state_manager import AppState
+        from pfe_app.input_handler import Action
+        from pfe_app.state_manager import AppState
 
         if self.input_mode:
             # Text input mode
@@ -118,7 +118,7 @@ class Search(ScrollableList):
 
     def _update_text_input(self):
         """Update text input (software keyboard)."""
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Character selection
         if self.input_handler.is_pressed_with_repeat(Action.UP):

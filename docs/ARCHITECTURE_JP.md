@@ -15,7 +15,7 @@ PFEは、Pyxel（レトロゲームエンジン）をベースにしたROMラン
 
 ### 技術スタック
 - **Python 3.x**
-- **Pyxel 2.2.7**: グラフィック描画エンジン
+- **Pyxel 2.9.5**: グラフィック描画エンジン（動作確認済み）
 - **Pillow**: 画像処理
 - **pygame**: BGM再生（遅延読み込み）
 - **pyxel-universal-font**: 日本語フォント
@@ -25,23 +25,30 @@ PFEは、Pyxel（レトロゲームエンジン）をベースにしたROMラン
 ## 2. ディレクトリ構造
 
 ```
-pd/
+pfe/
 ├── main.py                    # エントリーポイント・メインアプリケーション
-├── launcher.py                # ROM起動システム
-├── config.py                  # 設定ファイルパーサー（pfe.cfg）
-├── state_manager.py           # UI状態管理（ステートマシン）
-├── input_handler.py           # 入力処理（キーボード・ゲームパッド）
-├── persistence.py             # データ永続化（JSON）
-├── rom_manager.py             # ROMファイルスキャン・フィルタリング
-├── theme_manager.py           # カラーテーマ管理
-├── bgm_manager.py             # BGM再生管理
-├── system_monitor.py          # システム状態監視（バッテリー・ネットワーク）
-├── brightness_manager.py      # 画面輝度制御
-├── japanese_text.py           # 日本語テキスト描画
-├── screenshot_loader.py       # スクリーンショット読み込み
-├── music_mode.py              # 音楽再生モード
-├── debug.py                   # デバッグログユーティリティ
-├── version.py                 # バージョン情報
+├── launcher.sh                # PFE起動/再起動用シェルラッパー
+├── pfe_app/                   # アプリ内部パッケージ
+│   ├── __init__.py            # パッケージマーカー
+│   ├── launcher.py            # ROM起動システム
+│   ├── config.py              # 設定ファイルパーサー（pfe.cfg）
+│   ├── state_manager.py       # UI状態管理（ステートマシン）
+│   ├── input_handler.py       # 入力処理（キーボード・ゲームパッド）
+│   ├── persistence.py         # データ永続化（JSON）
+│   ├── rom_manager.py         # ROMファイルスキャン・フィルタリング
+│   ├── theme_manager.py       # カラーテーマ管理
+│   ├── bgm_manager.py         # BGM再生管理
+│   ├── bgm_worker.py          # BGMワーカープロセス
+│   ├── image_cache.py         # 画像読み込み/キャッシュ
+│   ├── palette_manager.py     # Pyxelパレット管理
+│   ├── script_runner.py       # 外部スクリプト実行
+│   ├── system_monitor.py      # システム状態監視（バッテリー/ネットワーク）
+│   ├── brightness_manager.py  # 画面輝度制御
+│   ├── japanese_text.py       # 日本語テキスト描画
+│   ├── screenshot_loader.py   # スクリーンショット読み込み
+│   ├── music_mode.py          # 音楽再生モード
+│   ├── debug.py               # デバッグログユーティリティ
+│   └── version.py             # バージョン情報
 │
 ├── ui/                        # UIコンポーネント
 │   ├── base.py                # 基底クラス（UIScreen, ScrollableList）
@@ -58,16 +65,21 @@ pd/
 │   ├── search.py              # ROM検索
 │   ├── settings.py            # 設定メニュー
 │   ├── wifi_settings.py       # WiFi設定
+│   ├── bluetooth_settings.py  # Bluetooth設定
 │   ├── key_config_menu.py     # キー設定メニュー
 │   ├── key_config.py          # キーマッピング画面
 │   ├── bgm_config.py          # BGM設定
 │   ├── datetime_settings.py   # 日付・時刻設定
 │   ├── statistics.py          # プレイ統計
+│   ├── image_cache_screen.py  # 画像キャッシュ管理
+│   ├── help_screen.py         # ヘルプ画面
 │   ├── about.py               # About画面
 │   └── quit_menu.py           # 終了ダイアログ
 │
 ├── data/                      # 設定・データファイル
 │   ├── pfe.cfg                # メイン設定ファイル
+│   ├── pfe.cfg.example        # 設定ファイルの雛形
+│   ├── pfe.retro.cfg.example  # retroarch.cfg風フォーマット例
 │   ├── session.json           # セッション状態（実行時生成）
 │   ├── settings.json          # ユーザー設定（実行時生成）
 │   ├── favorites.json         # お気に入りリスト
@@ -90,10 +102,23 @@ pd/
 │   └── ...                    # その他システムスクリプト
 │
 ├── bin/                       # 外部バイナリ
-│   └── retroarch.sh           # RetroArchランチャー
+│   ├── retroarch.sh           # RetroArchランチャー
+│   ├── pyxel.sh               # Pyxelゲームランチャー
+│   ├── rocknix_runemu.sh      # ROCKNIX runemu連携
+│   ├── ppsspp.sh              # PPSSPPランチャー
+│   ├── drastic.sh             # DraSticランチャー
+│   └── yabasanshiro.sh        # Yabasanshiroランチャー
+│
+├── tools/rocknix/             # ROCKNIX向け導入/同期ツール
+│   ├── ports/                 # /roms/ports にコピーしてESから実行する入口
+│   ├── sync_pfe_from_es_systems.py
+│   └── README_JP.md
 │
 └── docs/                      # ドキュメント
-    └── ARCHITECTURE.md        # このファイル
+    ├── ARCHITECTURE.md        # 英語版
+    ├── ARCHITECTURE_JP.md     # このファイル
+    ├── ROCKNIX_JP.md          # ROCKNIX向け導入手順
+    └── RELEASE_JP.md          # ROCKNIX向け配布チェックリスト
 ```
 
 ---
@@ -161,11 +186,14 @@ class AppState(Enum):
     SEARCH          = "search"           # 検索
     SETTINGS        = "settings"         # 設定
     WIFI_SETTINGS   = "wifi_settings"    # WiFi設定
+    BLUETOOTH_SETTINGS = "bluetooth_settings" # Bluetooth設定
     KEY_CONFIG_MENU = "key_config_menu"  # キー設定メニュー
     KEY_CONFIG      = "key_config"       # キーマッピング
     BGM_CONFIG      = "bgm_config"       # BGM設定
     DATETIME_SETTINGS = "datetime_settings" # 日付・時刻設定
     STATISTICS      = "statistics"       # 統計
+    IMAGE_CACHE     = "image_cache"      # 画像キャッシュ
+    HELP            = "help"             # ヘルプ
     ABOUT           = "about"            # About
     QUIT_MENU       = "quit_menu"        # 終了確認
 ```
@@ -210,9 +238,13 @@ category_positions = {
 ; ========================================
 ROM_BASE=/roms                              ; ROMベースディレクトリ
 TYPE_RA=./bin/retroarch.sh                  ; RetroArchランチャー
-TYPE_SA_PPSSPP=/usr/local/bin/ppsspp        ; スタンドアロンエミュレータ
-CORE_PATH=/home/ark/.config/retroarch/cores ; コアライブラリパス
-DEBUG=true                                  ; デバッグモード
+TYPE_PYXEL=./bin/pyxel.sh                   ; Pyxelゲームランチャー
+TYPE_SA_PPSSPP=./bin/ppsspp.sh              ; スタンドアロンエミュレータ
+CORE_PATH=/usr/lib/libretro                 ; 任意: RetroArchコアディレクトリ
+RA_LAUNCH_MODE=direct                       ; direct / runemu
+RESUME_AFTER_GAME=true                      ; ゲーム終了後にPFEへ戻る
+PYXEL_LAUNCH_MODE=handoff                   ; Pyxel起動時はPFEを一時終了
+DEBUG=false                                 ; デバッグモード
 
 ; アセットディレクトリ
 SCREENSHOT_DIR=assets/screenshots           ; スクリーンショット
@@ -221,11 +253,16 @@ BGM_DIR=assets/bgm                          ; BGMファイル
 ; システムスクリプト
 BATTERY_SCRIPT=./scripts/get_battery.sh
 NETWORK_SCRIPT=./scripts/get_network.sh
+BT_SCAN_SCRIPT=./scripts/bt_scan.sh
+DATETIME_SET_SCRIPT=./scripts/set_datetime.sh
+RESTART_PFE_SCRIPT=./scripts/restart_pfe.sh
+SWITCH_TO_ES_SCRIPT=./scripts/switch_to_es.sh
 
 ; ========================================
 ; カテゴリ定義
 ; ========================================
 -TITLE=Nintendo Entertainment System        ; 表示名
+-SYSTEM=nes                                 ; ES/ROCKNIXのシステムID
 -TITLE_IMG=./assets/title/Fc_2.png          ; タイトル画像
 -DIR=nes                                    ; ROMディレクトリ（相対/絶対）
 -EXT=nes,NES,zip,ZIP                        ; 対応拡張子
@@ -242,8 +279,11 @@ NETWORK_SCRIPT=./scripts/get_network.sh
 ### 5.3 コアパス解決
 
 ```
--CORE=nestopia           → CORE_PATH/nestopia_libretro.so
+-CORE=nestopia           → CORE_PATH指定時は CORE_PATH/nestopia_libretro.so
+-CORE=nestopia           → CORE_PATH未指定時は nestopia_libretro.so をランチャーへ渡す
 -CORE=/full/path/core.so → /full/path/core.so（絶対パス）
+-CORE=SA:PPSSPP          → TYPE_SA_PPSSPP にROMパスを渡す
+-CORE=pyxel:pyxel        → TYPE_PYXEL にROMパスを渡す
 ```
 
 ---
@@ -310,7 +350,8 @@ Launcher.launch_rom(rom_file, category, core)
     │   ├── 履歴に追加
     │   ├── コア選択を保存
     │   ├── セッション保存
-    │   └── PFE終了（launcher.shが再起動）
+    │   ├── RESUME_AFTER_GAME=trueならPFEプロセス内で復帰
+    │   └── handoff起動またはRESUME_AFTER_GAME=falseならPFE終了
     │
     └── 6. 起動失敗時:
         ├── エラートースト表示
@@ -321,9 +362,9 @@ Launcher.launch_rom(rom_file, category, core)
 
 | タイプ | 説明 | 起動コマンド |
 |--------|------|--------------|
-| `RA` | RetroArch | `TYPE_RA core_path rom_path` |
-| `SA_PPSSPP` | PPSSPP | `TYPE_SA_PPSSPP rom_path` |
-| `SA:pyxel` | Pyxelアプリ | `python rom_path` |
+| `RA` | RetroArch | `TYPE_RA core_path_or_filename rom_path` |
+| `SA:PPSSPP` | PPSSPP | `TYPE_SA_PPSSPP rom_path` |
+| `pyxel:pyxel` | Pyxelアプリ | `TYPE_PYXEL rom_path` |
 | カスタム | 設定による | `TYPE_* rom_path` |
 
 ---
@@ -340,12 +381,11 @@ class Action(Enum):
     START, SELECT           # 特殊ボタン
 ```
 
-### 8.2 ボタンレイアウト
+### 8.2 キーマッピング
 
-| レイアウト | 決定 | キャンセル |
-|------------|------|------------|
-| Nintendo | A | B |
-| Xbox | B | A |
+PFEは固定のデフォルト割り当てを使い、`keyconfig.json` がある場合はそちらを優先します。
+機種ごとのボタン差分はキーマッピングウィザードで補正します。
+互換性のため古い `button_layout` 設定は読み込み時に無視されます。
 
 ### 8.3 主要機能
 
@@ -385,7 +425,6 @@ class InputHandler:
     "show_screenshots": "On",
     "sort_mode": "Name",
     "view_mode": "list",
-    "button_layout": "NINTENDO",
     "resolution": "1:1",
     "theme": "dark",
     "bgm_enabled": "On",
@@ -460,10 +499,13 @@ class ScrollableList(UIScreen):
 | 検索 | `Search` | ROM検索 |
 | 設定 | `Settings` | 各種設定 |
 | WiFi設定 | `WiFiSettings` | ネットワーク設定 |
+| Bluetooth設定 | `BluetoothSettings` | Bluetoothスキャン/ペアリング |
 | キー設定 | `KeyConfig` | ボタンリマップ |
 | BGM設定 | `BGMConfig` | 音楽設定 |
 | 日付・時刻設定 | `DateTimeSettings` | システム日付・時刻設定 |
 | 統計 | `Statistics` | プレイ統計 |
+| 画像キャッシュ | `ImageCacheScreen` | スクリーンショット/タイトル画像キャッシュ管理 |
+| ヘルプ | `HelpScreen` | 操作ヘルプ |
 | About | `About` | バージョン情報 |
 | 終了 | `QuitMenu` | 終了確認 |
 
@@ -637,7 +679,8 @@ InputHandler.is_pressed/is_held()
          │   └── 失敗時: BGM再開
          ├── Persistence: 履歴/コア選択保存
          ├── セッション保存
-         └── PFE終了 → launcher.sh再起動
+         ├── 通常起動: PFEプロセス内で復帰
+         └── handoff起動: PFE終了 → launcher.shまたはsystemdが再起動
                               ↓
                          セッション復元
                               ↓
@@ -674,17 +717,24 @@ ROMApp.draw()
 | `get_network.sh` | ネットワーク接続確認 |
 | `wifi_scan.sh` | 利用可能WiFiスキャン |
 | `wifi_connect.sh` | WiFi接続 |
+| `bt_scan.sh` | Bluetoothデバイススキャン |
+| `bt_pair.sh` | Bluetoothペアリング |
+| `bt_status.sh` | Bluetooth状態取得 |
+| `bt_toggle.sh` | Bluetoothオン/オフ |
 | `get_cpu_governor.sh` | CPUガバナー取得 |
 | `set_cpu_governor.sh` | CPUガバナー設定 |
 | `set_datetime.sh` | システム日付・時刻設定 |
 | `system_reboot.sh` | システム再起動 |
 | `system_shutdown.sh` | システムシャットダウン |
+| `restart_pfe.sh` | PFE再起動 |
+| `switch_to_es.sh` | EmulationStationへ切替 |
 
 ### 16.2 エミュレータ連携
 
-- **RetroArch**: シェルスクリプト経由でコア+ROMパスを渡す
-- **スタンドアロン**: 直接実行ファイルにROMパスを渡す
-- **カスタム**: 設定可能なランチャー
+- **RetroArch**: `TYPE_RA` にコア名またはコアパス + ROMパスを渡す
+- **スタンドアロン**: `TYPE_SA_*` にROMパスを渡す
+- **カスタム**: `TYPE_*` にROMパスを渡す
+- **ROCKNIX**: `bin/retroarch.sh` や `bin/rocknix_runemu.sh` が `PFE_SYSTEM` / `PFE_CORE_NAME` などの環境変数を受け取り、runemu連携に利用する
 
 ---
 
@@ -735,7 +785,7 @@ DEBUG=true
 ### 19.2 デバッグログ
 
 ```python
-from debug import debug_print
+from pfe_app.debug import debug_print
 
 debug_print("[BGM] Track ended, playing next")
 # DEBUGがtrueの場合のみ出力
@@ -747,19 +797,19 @@ debug_print("[BGM] Track ended, playing next")
 
 ### 20.1 新しいエミュレータタイプの追加
 
-1. `pfe.cfg`に`TYPE_SA_*`変数を追加
-2. カテゴリ定義で`-CORE=SA:*`を使用
+1. `pfe.cfg`に`TYPE_*`または`TYPE_SA_*`変数を追加
+2. カテゴリ定義で`-CORE=TYPE:NAME`または`-CORE=SA:NAME`を使用
 
 ### 20.2 新しいテーマの追加
 
-1. `theme_manager.py`の`THEMES`辞書に追加
+1. `pfe_app/theme_manager.py`の`THEMES`辞書に追加
 2. 全カラーキーを定義
 
 ### 20.3 新しいUI画面の追加
 
 1. `ui/`に新しいファイル作成
 2. `UIScreen`または`ScrollableList`を継承
-3. `state_manager.py`の`AppState`に追加
+3. `pfe_app/state_manager.py`の`AppState`に追加
 4. `main.py`に遅延初期化プロパティを追加
 
 ---
@@ -794,4 +844,4 @@ The icon assets included in this project are the property of their respective cr
 
 ---
 
-*このドキュメントは自動生成されました。最終更新: 2026-02-07*
+*最終更新: 2026-05-26*

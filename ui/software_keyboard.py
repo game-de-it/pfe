@@ -107,7 +107,7 @@ class SoftwareKeyboard:
         if not self.active:
             return
 
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         bg_color = theme.get_color("background")
         border_color = theme.get_color("border")

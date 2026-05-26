@@ -4,8 +4,8 @@ Uses external scripts for cross-platform compatibility.
 """
 
 import os
-import subprocess
-from debug import debug_print
+from pfe_app.debug import debug_print
+from pfe_app.script_runner import ScriptRunner
 
 
 class BrightnessManager:
@@ -15,6 +15,7 @@ class BrightnessManager:
         self.scripts_dir = "scripts"
         self.get_script = os.path.join(self.scripts_dir, "get_brightness.sh")
         self.set_script = os.path.join(self.scripts_dir, "set_brightness.sh")
+        self.script_runner = ScriptRunner()
         self.min_brightness = 1
         self.max_brightness = 10
         self.available = self._check_scripts()
@@ -48,26 +49,14 @@ class BrightnessManager:
             return -1
 
         try:
-            result = subprocess.run(
-                ["sh", self.get_script],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if result.returncode == 0:
-                brightness = int(result.stdout.strip())
-                # Clamp to valid range
-                brightness = max(self.min_brightness, min(self.max_brightness, brightness))
-                debug_print(f"Current brightness: {brightness}")
-                return brightness
-            else:
-                debug_print(f"Get brightness failed: {result.stderr}")
+            output = self.script_runner.run_text(self.get_script, timeout=5)
+            if output is None:
                 return -1
-
-        except subprocess.TimeoutExpired:
-            debug_print("Get brightness timeout")
-            return -1
+            brightness = int(output)
+            # Clamp to valid range
+            brightness = max(self.min_brightness, min(self.max_brightness, brightness))
+            debug_print(f"Current brightness: {brightness}")
+            return brightness
         except ValueError as e:
             debug_print(f"Get brightness parse error: {e}")
             return -1
@@ -91,27 +80,11 @@ class BrightnessManager:
         # Clamp to valid range
         level = max(self.min_brightness, min(self.max_brightness, level))
 
-        try:
-            result = subprocess.run(
-                ["sh", self.set_script, str(level)],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if result.returncode == 0:
-                debug_print(f"Brightness set to: {level}")
-                return True
-            else:
-                debug_print(f"Set brightness failed: {result.stderr}")
-                return False
-
-        except subprocess.TimeoutExpired:
-            debug_print("Set brightness timeout")
-            return False
-        except Exception as e:
-            debug_print(f"Set brightness error: {e}")
-            return False
+        result = self.script_runner.run(self.set_script, args=[str(level)], timeout=5)
+        if result and result.ok:
+            debug_print(f"Brightness set to: {level}")
+            return True
+        return False
 
     def set_brightness_off(self) -> bool:
         """
@@ -124,24 +97,11 @@ class BrightnessManager:
         if not self.available:
             return False
 
-        try:
-            result = subprocess.run(
-                ["sh", self.set_script, "0"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if result.returncode == 0:
-                debug_print("Brightness set to 0 (off)")
-                return True
-            else:
-                debug_print(f"Set brightness off failed: {result.stderr}")
-                return False
-
-        except Exception as e:
-            debug_print(f"Set brightness off error: {e}")
-            return False
+        result = self.script_runner.run(self.set_script, args=["0"], timeout=5)
+        if result and result.ok:
+            debug_print("Brightness set to 0 (off)")
+            return True
+        return False
 
 
 # Global instance

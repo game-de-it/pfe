@@ -4,7 +4,7 @@ ROM file manager for scanning and filtering ROM files.
 
 import os
 from typing import List, Optional
-from config import Category
+from pfe_app.config import Category
 
 
 class ROMFile:
@@ -136,7 +136,7 @@ class ROMManager:
 
         # Try to get actual text width using japanese_text module
         try:
-            from japanese_text import get_japanese_text_width
+            from pfe_app.japanese_text import get_japanese_text_width
             current_width = get_japanese_text_width(name)
 
             # If within width, return as-is

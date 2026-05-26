@@ -18,11 +18,14 @@ class AppState(Enum):
     SEARCH = "search"
     SETTINGS = "settings"
     WIFI_SETTINGS = "wifi_settings"
+    BLUETOOTH_SETTINGS = "bluetooth_settings"
     KEY_CONFIG_MENU = "key_config_menu"  # Key Config submenu
     KEY_CONFIG = "key_config"  # Key Mapping screen
     BGM_CONFIG = "bgm_config"  # BGM Config submenu
     DATETIME_SETTINGS = "datetime_settings"  # Date/Time settings
     STATISTICS = "statistics"
+    IMAGE_CACHE = "image_cache"
+    HELP = "help"
     ABOUT = "about"
     QUIT_MENU = "quit_menu"
 

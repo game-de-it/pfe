@@ -5,10 +5,27 @@ Key configuration screen with wizard-style key binding.
 import pyxel
 from ui.base import UIScreen
 from ui.components import StatusBar, HelpText
-from japanese_text import draw_japanese_text
-from theme_manager import get_theme_manager
+from pfe_app.japanese_text import draw_japanese_text
+from pfe_app.theme_manager import get_theme_manager
 import json
 import os
+
+
+def _build_key_name_map():
+    """Build a mapping between pyxel constant names and their numeric values."""
+    name_to_value = {}
+    value_to_name = {}
+    prefixes = ("KEY_", "GAMEPAD1_BUTTON_", "GAMEPAD1_AXIS_")
+    for attr in dir(pyxel):
+        if any(attr.startswith(p) for p in prefixes):
+            val = getattr(pyxel, attr)
+            if isinstance(val, int):
+                name_to_value[attr] = val
+                value_to_name[val] = attr
+    return name_to_value, value_to_name
+
+
+_KEY_NAME_TO_VALUE, _KEY_VALUE_TO_NAME = _build_key_name_map()
 
 
 class KeyConfig(UIScreen):
@@ -166,17 +183,22 @@ class KeyConfig(UIScreen):
         print("Key configuration saved and applied!")
 
     def _save_key_config(self):
-        """キー設定を保存"""
+        """キー設定を保存（定数名で保存し、pyxelバージョン間の互換性を確保）"""
         config_file = "data/keyconfig.json"
 
-        # キーコードを保存可能な形式に変換
         config_data = {
-            "version": "1.0",
+            "version": "2.0",
             "bindings": {}
         }
 
         for action, key_code in self.key_bindings.items():
-            config_data["bindings"][action] = key_code
+            # 数値を定数名に変換して保存
+            key_name = _KEY_VALUE_TO_NAME.get(key_code)
+            if key_name:
+                config_data["bindings"][action] = key_name
+            else:
+                # 未知のキーコードはそのまま数値で保存
+                config_data["bindings"][action] = key_code
 
         try:
             os.makedirs("data", exist_ok=True)
@@ -191,7 +213,7 @@ class KeyConfig(UIScreen):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # 警告メッセージのタイマー
         if self.warning_frames > 0:

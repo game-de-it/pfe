@@ -11,10 +11,11 @@
 #
 
 INTERFACE="${WIFI_INTERFACE:-wlan0}"
+WIFI_SCAN_WAIT_SECONDS="${WIFI_SCAN_WAIT_SECONDS:-6}"
 
 # Trigger scan
 wpa_cli -i "$INTERFACE" scan >/dev/null 2>&1
-sleep 3
+sleep "$WIFI_SCAN_WAIT_SECONDS"
 
 # Get scan results and extract SSIDs
 # wpa_cli scan_results format: bssid / frequency / signal level / flags / ssid

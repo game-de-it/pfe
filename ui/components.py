@@ -4,11 +4,14 @@ Reusable UI components for the launcher.
 
 import pyxel
 from typing import List, Optional
-from system_monitor import get_system_monitor
+from pfe_app.system_monitor import get_system_monitor
 
 
 class StatusBar:
     """Status bar component showing current state info."""
+
+    HEIGHT = 10
+    TEXT_Y_OFFSET = -1
 
     def __init__(self, y: int, width: int = None):
         self.y = y
@@ -16,43 +19,81 @@ class StatusBar:
         self.left_text = ""
         self.center_text = ""
         self.right_text = ""
+        self.center_highlight = False
 
     @property
     def width(self):
         """Get width - always use pyxel.width for dynamic resolution support."""
         return pyxel.width
 
-    def set_text(self, left: str = "", center: str = "", right: str = ""):
+    def set_text(self, left: str = "", center: str = "", right: str = "", center_highlight: bool = False):
         """Set status bar text."""
         self.left_text = left
         self.center_text = center
         self.right_text = right
+        self.center_highlight = center_highlight
+
+    def _text_width(self, text: str) -> int:
+        try:
+            from pfe_app.japanese_text import get_japanese_text_width
+            return get_japanese_text_width(text)
+        except Exception:
+            return len(text) * 4
+
+    def _fit_text(self, text: str, max_width: int) -> str:
+        if self._text_width(text) <= max_width:
+            return text
+        if max_width <= self._text_width(".."):
+            return ""
+        trimmed = text
+        while trimmed and self._text_width(trimmed + "..") > max_width:
+            trimmed = trimmed[:-1]
+        return trimmed + ".." if trimmed else ""
+
+    def _draw_text(self, x: int, y: int, text: str, color: int):
+        try:
+            from pfe_app.japanese_text import draw_japanese_text
+            draw_japanese_text(x, y, text, color)
+        except Exception:
+            pyxel.text(x, y, text, color)
 
     def draw(self):
         """Draw the status bar."""
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         status_bg = theme.get_color("status_bg")
         text_color = theme.get_color("text")
+        text_selected_color = theme.get_color("text_selected")
 
         width = self.width  # Get actual width
 
         # Background
-        pyxel.rect(0, self.y, width, 8, status_bg)
+        pyxel.rect(0, self.y, width, self.HEIGHT, status_bg)
+
+        left_width_limit = max(16, width // 3)
+        right_width_limit = max(16, width // 3)
 
         # Left text
         if self.left_text:
-            pyxel.text(2, self.y + 1, self.left_text, text_color)
+            left_text = self._fit_text(self.left_text, left_width_limit)
+            self._draw_text(2, self.y + self.TEXT_Y_OFFSET, left_text, text_color)
 
-        # Center text
-        if self.center_text:
-            text_width = len(self.center_text) * 4
-            pyxel.text(width // 2 - text_width // 2, self.y + 1, self.center_text, text_color)
+        right_width = 0
 
         # Right text
         if self.right_text:
-            text_width = len(self.right_text) * 4
-            pyxel.text(width - text_width - 2, self.y + 1, self.right_text, text_color)
+            right_text = self._fit_text(self.right_text, right_width_limit)
+            right_width = self._text_width(right_text)
+            self._draw_text(width - right_width - 2, self.y + self.TEXT_Y_OFFSET, right_text, text_color)
+
+        # Center text
+        if self.center_text:
+            side_pad = max(self._text_width(self.left_text), right_width) + 8
+            center_width_limit = max(12, width - side_pad * 2)
+            center_text = self._fit_text(self.center_text, center_width_limit)
+            center_width = self._text_width(center_text)
+            center_color = text_selected_color if self.center_highlight else text_color
+            self._draw_text(width // 2 - center_width // 2, self.y + self.TEXT_Y_OFFSET, center_text, center_color)
 
 
 class Breadcrumb:
@@ -72,7 +113,7 @@ class Breadcrumb:
         if not self.path:
             return
 
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         text_color = theme.get_color("text")
         border_accent = theme.get_color("border_accent")
@@ -106,8 +147,8 @@ class CategoryTitle:
         if not self.title:
             return
 
-        from japanese_text import draw_japanese_text
-        from theme_manager import get_theme_manager
+        from pfe_app.japanese_text import draw_japanese_text
+        from pfe_app.theme_manager import get_theme_manager
 
         theme = get_theme_manager()
         text_selected_color = theme.get_color("text_selected")
@@ -180,7 +221,7 @@ class Counter:
 
     def draw(self):
         """Draw counter."""
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         text_color = theme.get_color("text")
 
@@ -204,7 +245,7 @@ class LoadingSpinner:
 
     def draw(self):
         """Draw spinner."""
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         text_selected_color = theme.get_color("text_selected")
 
@@ -274,10 +315,11 @@ class HelpText:
         help_text = " ".join(parts)  # スペースを1つに減らす
 
         # Draw at bottom (画面内に収まるように調整)
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         text_color = theme.get_color("text")
-        pyxel.text(2, self.y, help_text, text_color)
+        draw_y = max(self.y, pyxel.height - 8)
+        pyxel.text(2, draw_y, help_text, text_color)
 
 
 class Icon:
@@ -345,7 +387,7 @@ class SystemStatus:
         x = screen_width - text_width - 2
 
         # Draw text
-        from theme_manager import get_theme_manager
+        from pfe_app.theme_manager import get_theme_manager
         theme = get_theme_manager()
         text_color = theme.get_color("text")
         pyxel.text(x, self.y, status_text, text_color)

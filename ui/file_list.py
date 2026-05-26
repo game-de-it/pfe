@@ -8,12 +8,17 @@ from ui.base import ScrollableList, draw_scrollbar
 from ui.components import StatusBar, HelpText, CategoryTitle, Counter, Icon, SystemStatus
 from ui.window import DQWindow
 from typing import List
-from rom_manager import ROMFile
-from japanese_text import draw_japanese_text, get_japanese_text_width
-from screenshot_loader import ScreenshotLoader
-from theme_manager import get_theme_manager
-from PIL import Image
-from debug import debug_print
+from pfe_app.rom_manager import ROMFile
+from pfe_app.japanese_text import (
+    draw_japanese_text,
+    draw_japanese_text_small,
+    get_japanese_text_width,
+    get_japanese_text_width_small,
+)
+from pfe_app.screenshot_loader import ScreenshotLoader
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.debug import debug_print, trace
+from pfe_app.image_cache import ImageCache
 from ui.soft_keyboard import SoftKeyboard
 
 
@@ -40,15 +45,11 @@ class FileList(ScrollableList):
 
         # Screenshot display
         self.screenshot_loader = ScreenshotLoader(config.get_screenshot_dir())
+        self.image_cache = ImageCache(memory_limit=64)
+        self._screenshot_path_cache = {}
         # Load screenshot display setting from settings
         settings = self.persistence.load_settings()
         self.show_screenshots = settings.get("show_screenshots", "On") == "On"
-        self.current_screenshot_rom = None  # ROM name of currently displayed screenshot
-        self.screenshot_cache_bank = 1  # Image bank for screenshots
-        self.screenshot_loaded = False  # Whether screenshot is loaded
-
-        # Lookup table for RGB to Pyxel color conversion (for performance)
-        self._init_color_lookup_table()
 
         # Sort settings
         self.sort_mode = 0  # 0: by name, 1: by date (newest first), 2: by date (oldest first)
@@ -59,7 +60,43 @@ class FileList(ScrollableList):
 
         # Animation for gallery mode
         self.gallery_animation_offset = 0.0  # -1.0 to 1.0 (slide direction)
-        self.gallery_animation_speed = 0.3  # Animation speed
+        self.gallery_animation_direction = 0
+        self.gallery_animation_frame = 0
+        self.gallery_animation_duration = max(
+            4,
+            min(
+                30,
+                self._coerce_non_negative_int(
+                    getattr(config, "global_vars", {}).get("GALLERY_SCROLL_FRAMES", 8),
+                    8,
+                ),
+            ),
+        )
+        self.gallery_previous_index = None
+        self.gallery_defer_image_load = (
+            str(getattr(config, "global_vars", {}).get("GALLERY_DEFER_IMAGE_LOAD", "true")).strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+        self.gallery_post_scroll_load_delay = max(
+            0,
+            min(
+                30,
+                self._coerce_non_negative_int(
+                    getattr(config, "global_vars", {}).get("GALLERY_POST_SCROLL_LOAD_DELAY", 3),
+                    3,
+                ),
+            ),
+        )
+        self.gallery_post_scroll_load_cooldown = 0
+        self.gallery_pending_deferred_image_load = False
+        self.gallery_prefetch_radius = 2
+        self.gallery_prefetch_enabled = (
+            str(getattr(config, "global_vars", {}).get("GALLERY_PREFETCH", "false")).strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+        self._gallery_prefetch_queue: list[tuple[str, int, int]] = []
+        self._gallery_prefetched_keys: set[tuple[str, int, int]] = set()
+        self._gallery_prefetch_signature = None
 
         # Soft keyboard for quick jump
         self.soft_keyboard = SoftKeyboard()
@@ -70,6 +107,156 @@ class FileList(ScrollableList):
         self.slideshow_active = False
         self.slideshow_timer = 0
         self.slideshow_interval = 90  # 3 seconds (assuming 30fps)
+        self._restore_cursor_position = None
+
+    @staticmethod
+    def _coerce_non_negative_int(value, default: int = 0) -> int:
+        """Return a safe non-negative integer for restored cursor state."""
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return default
+        return max(0, number)
+
+    def _clamp_item_index(self, value, item_count: int) -> int:
+        if item_count <= 0:
+            return 0
+        index = self._coerce_non_negative_int(value)
+        return min(index, item_count - 1)
+
+    def _gallery_layout(self) -> tuple[int, int, int, int, int, int, int]:
+        """Return geometry used by ROM gallery drawing and prefetching."""
+        area_width = max(1, pyxel.width - 8)
+        area_x = 4
+        area_y = 22
+        title_height = 8
+        title_margin = 4
+        title_bottom_gap = 3
+        bottom_limit = max(
+            area_y + 32,
+            self.status_bar.y - title_height - title_margin - title_bottom_gap,
+        )
+        area_height = max(24, bottom_limit - area_y)
+        return area_x, area_y, area_width, area_height, title_height, title_margin, title_bottom_gap
+
+    def _fit_small_text(self, text: str, max_width: int) -> str:
+        """Fit compact text to a pixel width."""
+        if get_japanese_text_width_small(text) <= max_width:
+            return text
+        if max_width <= get_japanese_text_width_small(".."):
+            return ""
+        trimmed = text
+        while trimmed and get_japanese_text_width_small(trimmed + "..") > max_width:
+            trimmed = trimmed[:-1]
+        return trimmed + ".." if trimmed else ""
+
+    @staticmethod
+    def _has_non_ascii(text: str) -> bool:
+        return any(ord(char) >= 128 for char in text)
+
+    def _gallery_title_width(self, text: str) -> int:
+        if self._has_non_ascii(text):
+            return get_japanese_text_width(text)
+        return get_japanese_text_width_small(text)
+
+    def _fit_gallery_title(self, text: str, max_width: int) -> str:
+        """Fit ROM title while keeping Japanese text readable."""
+        if self._gallery_title_width(text) <= max_width:
+            return text
+        if max_width <= self._gallery_title_width(".."):
+            return ""
+        trimmed = text
+        while trimmed and self._gallery_title_width(trimmed + "..") > max_width:
+            trimmed = trimmed[:-1]
+        return trimmed + ".." if trimmed else ""
+
+    def _draw_gallery_title_text(self, x: int, y: int, text: str, color: int):
+        if self._has_non_ascii(text):
+            draw_japanese_text(x, y, text, color)
+        else:
+            draw_japanese_text_small(x, y + 1, text, color)
+
+    def _draw_gallery_header(self):
+        """Draw a compact category title for the ROM gallery screen."""
+        if not self.current_category:
+            return
+
+        theme = get_theme_manager()
+        text_selected_color = theme.get_color("text_selected")
+        # Draw on the second header row so it never collides with system status.
+        max_width = max(16, pyxel.width - 4)
+        title = self._fit_gallery_title(self.current_category.name, max_width)
+        self._draw_gallery_title_text(2, 10, title, text_selected_color)
+
+    def _reset_gallery_prefetch(self, clear_seen: bool = True):
+        """Reset pending gallery screenshot preloads."""
+        self._gallery_prefetch_queue = []
+        self._gallery_prefetch_signature = None
+        if clear_seen:
+            self._gallery_prefetched_keys.clear()
+
+    def _reset_gallery_deferred_load(self):
+        """Clear deferred image-load state after navigation or list changes."""
+        self.gallery_post_scroll_load_cooldown = 0
+        self.gallery_pending_deferred_image_load = False
+
+    def _queue_gallery_prefetch(self):
+        """Queue the selected and nearby gallery screenshots for idle preloading."""
+        if not self.rom_files or not self.current_category:
+            return
+
+        _, _, area_width, area_height, _, _, _ = self._gallery_layout()
+        signature = (
+            self.current_category.name,
+            self.current_subdirectory,
+            self.selected_index,
+            len(self.rom_files),
+            area_width,
+            area_height,
+        )
+        if signature == self._gallery_prefetch_signature:
+            return
+
+        self._gallery_prefetch_signature = signature
+        self._gallery_prefetch_queue = []
+        offsets = [0]
+        for step in range(1, self.gallery_prefetch_radius + 1):
+            offsets.extend((step, -step))
+
+        queued = set()
+        for offset in offsets:
+            index = self.selected_index + offset
+            if index < 0 or index >= len(self.rom_files):
+                continue
+            rom = self.rom_files[index]
+            if rom.is_directory:
+                continue
+            screenshot_path = self._get_screenshot_path(rom.path)
+            if not screenshot_path:
+                continue
+            key = (screenshot_path, area_width, area_height)
+            if key in self._gallery_prefetched_keys or key in queued:
+                continue
+            self._gallery_prefetch_queue.append(key)
+            queued.add(key)
+
+    def _update_gallery_prefetch(self):
+        """Preload one queued gallery screenshot while the UI is idle."""
+        if not self.gallery_prefetch_enabled:
+            return
+        if self.view_mode != "gallery" or self.gallery_animation_direction != 0:
+            return
+
+        self._queue_gallery_prefetch()
+        if not self._gallery_prefetch_queue:
+            return
+
+        screenshot_path, area_width, area_height = self._gallery_prefetch_queue.pop(0)
+        self._gallery_prefetched_keys.add((screenshot_path, area_width, area_height))
+        try:
+            self.image_cache.get_fit(screenshot_path, area_width, area_height, upscale=True)
+        except Exception as e:
+            debug_print(f"[Gallery] Prefetch failed: {e}")
 
     def activate(self):
         """Called when screen becomes active."""
@@ -85,15 +272,15 @@ class FileList(ScrollableList):
         # Restore view_mode
         self.view_mode = settings.get("view_mode", "list")
 
-        # Reset screenshot cache
-        self.current_screenshot_rom = None
-        self.screenshot_loaded = False
-
         # Restore subdirectory and cursor position after game exit
         launch_subdirectory = self.state_manager.get_data('launch_subdirectory')
         launch_directory_stack = self.state_manager.get_data('launch_directory_stack')
-        launch_selected_index = self.state_manager.get_data('launch_selected_index', 0)
-        launch_scroll_offset = self.state_manager.get_data('launch_scroll_offset', 0)
+        launch_selected_index = self._coerce_non_negative_int(
+            self.state_manager.get_data('launch_selected_index', 0)
+        )
+        launch_scroll_offset = self._coerce_non_negative_int(
+            self.state_manager.get_data('launch_scroll_offset', 0)
+        )
         debug_print(f"[FILE_LIST.activate] launch_subdirectory={launch_subdirectory}, launch_directory_stack={launch_directory_stack}")
         debug_print(f"[FILE_LIST.activate] launch_selected_index={launch_selected_index}, launch_scroll_offset={launch_scroll_offset}")
         if launch_subdirectory is not None:
@@ -168,19 +355,21 @@ class FileList(ScrollableList):
         self._apply_sort()
 
         self.set_items(self.rom_files)
+        self._reset_gallery_prefetch()
+        self._reset_gallery_deferred_load()
 
         # Restore cursor position after returning from game
         if hasattr(self, '_restore_cursor_position') and self._restore_cursor_position is not None:
             restore_index, restore_scroll = self._restore_cursor_position
-            self.selected_index = min(restore_index, len(self.rom_files) - 1) if self.rom_files else 0
-            self.scroll_offset = restore_scroll
+            self.selected_index = self._clamp_item_index(restore_index, len(self.rom_files))
+            self.scroll_offset = self._coerce_non_negative_int(restore_scroll)
             self._restore_cursor_position = None
             debug_print(f"[_load_roms] Restored cursor: index={self.selected_index}, scroll={self.scroll_offset}")
         # Restore saved cursor position (only for top directory)
         elif not self.current_subdirectory:
             saved_position = self.state_manager.get_category_position(self.current_category.name)
-            self.selected_index = min(saved_position['index'], len(self.rom_files) - 1) if self.rom_files else 0
-            self.scroll_offset = saved_position['scroll']
+            self.selected_index = self._clamp_item_index(saved_position.get('index'), len(self.rom_files))
+            self.scroll_offset = self._coerce_non_negative_int(saved_position.get('scroll'))
         else:
             # For subdirectories, start from the beginning
             self.selected_index = 0
@@ -197,8 +386,8 @@ class FileList(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
-        from state_manager import AppState
+        from pfe_app.input_handler import Action
+        from pfe_app.state_manager import AppState
 
         # ソフトキーボード処理
         if self.soft_keyboard.is_active():
@@ -272,7 +461,7 @@ class FileList(ScrollableList):
                 selected = self.get_selected_item()
                 if selected and not selected.is_directory and self.current_category and self.current_category.cores:
                     self.state_manager.set_selected_file(selected.path, self.selected_index)
-                    from state_manager import AppState
+                    from pfe_app.state_manager import AppState
                     self.state_manager.change_state(AppState.CORE_SELECT)
             self.select_hold_frames = 0
 
@@ -298,6 +487,8 @@ class FileList(ScrollableList):
         if self.input_handler.is_pressed(Action.X):
             if self.view_mode == "list":
                 self.view_mode = "gallery"
+                self._reset_gallery_prefetch(clear_seen=False)
+                self._reset_gallery_deferred_load()
                 print("View mode: Gallery")
             else:
                 self.view_mode = "list"
@@ -404,6 +595,16 @@ class FileList(ScrollableList):
                 # Go back to main menu
                 self.state_manager.go_back()
 
+        if self.view_mode == "gallery":
+            self._update_gallery_animation()
+            has_input = any(self.input_handler.is_held(action) for action in Action)
+            if (
+                not has_input
+                and self.gallery_post_scroll_load_cooldown <= 0
+                and not self.gallery_pending_deferred_image_load
+            ):
+                self._update_gallery_prefetch()
+
     def _update_help_text(self):
         """Update help text (based on view_mode)."""
         if self.view_mode == "gallery":
@@ -467,12 +668,40 @@ class FileList(ScrollableList):
             # Start animation (set movement direction)
             # Next (delta > 0): slide from right to left (offset = 1.0 -> 0)
             # Previous (delta < 0): slide from left to right (offset = -1.0 -> 0)
-            self.gallery_animation_offset = 1.0 if delta > 0 else -1.0
+            self.gallery_previous_index = self.selected_index
+            self.gallery_animation_direction = 1 if delta > 0 else -1
+            self.gallery_animation_frame = 0
+            self.gallery_animation_offset = float(self.gallery_animation_direction)
+            self._reset_gallery_deferred_load()
 
             # Update index
             self.selected_index = new_index
             self._update_scroll()
             self.counter.set_count(self.selected_index, len(self.rom_files), "ROMs")
+
+    def _update_gallery_animation(self):
+        """Update gallery slide animation with a smooth stop."""
+        if self.gallery_animation_direction == 0:
+            self.gallery_animation_offset = 0.0
+            self.gallery_previous_index = None
+            if self.gallery_post_scroll_load_cooldown > 0:
+                self.gallery_post_scroll_load_cooldown -= 1
+            return
+
+        self.gallery_animation_frame += 1
+        t = min(1.0, self.gallery_animation_frame / self.gallery_animation_duration)
+        remaining = 1.0 - t
+        self.gallery_animation_offset = self.gallery_animation_direction * (remaining ** 3)
+        screen_width = pyxel.width or 160
+
+        if t >= 1.0 or abs(self.gallery_animation_offset * screen_width) < 0.5:
+            self.gallery_animation_direction = 0
+            self.gallery_animation_frame = 0
+            self.gallery_animation_offset = 0.0
+            self.gallery_previous_index = None
+            if self.gallery_defer_image_load:
+                self.gallery_post_scroll_load_cooldown = self.gallery_post_scroll_load_delay
+                self.gallery_pending_deferred_image_load = True
 
     def _apply_sort(self):
         """Apply sort."""
@@ -512,63 +741,21 @@ class FileList(ScrollableList):
         area_x = 4
         area_y = 20
 
-        # Only load image when selected ROM changes
-        if self.current_screenshot_rom != rom_path:
-            self.current_screenshot_rom = rom_path
-            self.screenshot_loaded = False
+        screenshot_path = self._get_screenshot_path(rom_path)
+        if not screenshot_path:
+            return
 
-            try:
-                # Search for screenshot file
-                screenshot_path = self._find_screenshot_file(rom_path)
-                if not screenshot_path:
-                    return
+        try:
+            image = self.image_cache.get_fit(screenshot_path, area_width, area_height, upscale=True)
+        except Exception as e:
+            debug_print(f"[Screenshot] Failed to cache image: {e}")
+            return
+        if image is None:
+            return
 
-                # 画像を読み込み
-                img = Image.open(screenshot_path)
-                orig_width, orig_height = img.size
-
-                # アスペクト比を維持してフィットするサイズを計算
-                scale_w = area_width / orig_width
-                scale_h = area_height / orig_height
-                scale = min(scale_w, scale_h)
-
-                new_width = int(orig_width * scale)
-                new_height = int(orig_height * scale)
-
-                # リサイズ
-                img = img.resize((new_width, new_height), Image.Resampling.BILINEAR)
-                img = img.convert('RGB')
-
-                # Speed up pixel access
-                pixels = img.load()
-
-                # Save to Pyxel image bank (only once)
-                pyxel_img = pyxel.image(self.screenshot_cache_bank)
-                for y in range(new_height):
-                    for x in range(new_width):
-                        r, g, b = pixels[x, y]
-                        # Convert RGB to nearest Pyxel color (using LUT)
-                        color = self._rgb_to_pyxel_color(r, g, b)
-                        pyxel_img.pset(x, y, color)
-
-                self.screenshot_loaded = True
-                self._screenshot_width = new_width
-                self._screenshot_height = new_height
-                # 中央配置用オフセット
-                self._screenshot_offset_x = (area_width - new_width) // 2
-                self._screenshot_offset_y = (area_height - new_height) // 2
-
-            except Exception as e:
-                # Mark as failed to load on error
-                pass
-
-        # Fast drawing from image bank
-        if self.screenshot_loaded:
-            ss_w = getattr(self, '_screenshot_width', area_width)
-            ss_h = getattr(self, '_screenshot_height', area_height)
-            offset_x = area_x + getattr(self, '_screenshot_offset_x', 0)
-            offset_y = area_y + getattr(self, '_screenshot_offset_y', 0)
-            pyxel.blt(offset_x, offset_y, self.screenshot_cache_bank, 0, 0, ss_w, ss_h)
+        offset_x = area_x + (area_width - image.width) // 2
+        offset_y = area_y + (area_height - image.height) // 2
+        pyxel.blt(offset_x, offset_y, image.image, 0, 0, image.width, image.height)
 
     def _find_screenshot_file(self, rom_path: str) -> str:
         """
@@ -607,11 +794,11 @@ class FileList(ScrollableList):
         # Example: assets/screenshots/Arc The Lad/SCPS-10008.png
         dir_screenshot_dir = os.path.join(screenshot_base_dir, parent_dir)
 
-        # Debug log
-        debug_print(f"[Screenshot] ROM path: {rom_path}")
-        debug_print(f"[Screenshot] Parent dir: {parent_dir}")
-        debug_print(f"[Screenshot] ROM name: {rom_name_without_ext}")
-        debug_print(f"[Screenshot] Directory: {dir_screenshot_dir}")
+        # Detailed search tracing is useful, but too noisy for normal DEBUG logs.
+        trace(f"[Screenshot] ROM path: {rom_path}")
+        trace(f"[Screenshot] Parent dir: {parent_dir}")
+        trace(f"[Screenshot] ROM name: {rom_name_without_ext}")
+        trace(f"[Screenshot] Directory: {dir_screenshot_dir}")
 
         # List of patterns to try
         name_patterns = []
@@ -649,55 +836,26 @@ class FileList(ScrollableList):
                 continue
             for ext in extensions:
                 path = os.path.join(dir_screenshot_dir, pattern + ext)
-                debug_print(f"[Screenshot] Trying: {path}")
+                trace(f"[Screenshot] Trying: {path}")
                 if os.path.exists(path):
                     debug_print(f"[Screenshot] Found: {path}")
                     return path
 
-        debug_print(f"[Screenshot] Not found for: {rom_path}")
+        trace(f"[Screenshot] Not found for: {rom_path}")
         return None
 
-    def _init_color_lookup_table(self):
-        """Initialize lookup table for RGB to Pyxel color conversion (for performance)."""
-        # Pyxel color palette
-        palette = [
-            (0, 0, 0), (43, 51, 95), (126, 32, 114), (25, 149, 156),
-            (139, 72, 82), (57, 92, 152), (169, 193, 255), (238, 238, 238),
-            (212, 24, 108), (211, 132, 65), (233, 195, 91), (112, 198, 169),
-            (118, 150, 222), (163, 163, 163), (255, 151, 152), (237, 199, 176),
-        ]
+    def _get_screenshot_path(self, rom_path: str) -> str | None:
+        """Return a cached screenshot path lookup for a ROM path."""
+        cached = self._screenshot_path_cache.get(rom_path)
+        if cached:
+            if os.path.exists(cached):
+                return cached
+            self._screenshot_path_cache.pop(rom_path, None)
 
-        # 32x32x32 lookup table (quantize RGB from 8 to 5 bits)
-        self.color_lut = {}
-        for r5 in range(32):
-            for g5 in range(32):
-                for b5 in range(32):
-                    # Convert 5-bit value to 8-bit value
-                    r = (r5 * 255) // 31
-                    g = (g5 * 255) // 31
-                    b = (b5 * 255) // 31
-
-                    # Find nearest Pyxel color
-                    min_distance = float('inf')
-                    nearest_color = 0
-
-                    for i, (pr, pg, pb) in enumerate(palette):
-                        distance = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
-                        if distance < min_distance:
-                            min_distance = distance
-                            nearest_color = i
-
-                    # Save to LUT
-                    self.color_lut[(r5, g5, b5)] = nearest_color
-
-    def _rgb_to_pyxel_color(self, r: int, g: int, b: int) -> int:
-        """Convert RGB to nearest Pyxel color (using LUT for performance)."""
-        # Quantize from 8-bit to 5-bit
-        r5 = (r * 31) // 255
-        g5 = (g * 31) // 255
-        b5 = (b * 31) // 255
-
-        return self.color_lut.get((r5, g5, b5), 0)
+        screenshot_path = self._find_screenshot_file(rom_path)
+        if screenshot_path:
+            self._screenshot_path_cache[rom_path] = screenshot_path
+        return screenshot_path
 
     def _draw_list_view(self):
         """Draw list view."""
@@ -744,17 +902,82 @@ class FileList(ScrollableList):
             draw_scrollbar(scrollbar_x, start_y, self.items_per_page * line_height,
                           len(self.rom_files), self.items_per_page, self.scroll_offset, scrollbar_color)
 
+    def _gallery_display_name(self, rom_file: ROMFile) -> str:
+        if rom_file.is_directory:
+            return "[" + rom_file.name + "]"
+
+        display_name = self.rom_manager.get_rom_display_name(rom_file, max_length=38, max_width=155)
+        if self.persistence.is_favorite(rom_file.path):
+            display_name = display_name + " *"
+        return display_name
+
+    def _get_gallery_image(
+        self,
+        rom_file: ROMFile,
+        area_width: int,
+        area_height: int,
+        allow_process: bool,
+    ) -> tuple[object, bool]:
+        if not self.current_category or rom_file.is_directory:
+            return None, False
+
+        screenshot_path = self._get_screenshot_path(rom_file.path)
+        if not screenshot_path:
+            return None, False
+
+        try:
+            if allow_process:
+                return self.image_cache.get_fit(screenshot_path, area_width, area_height, upscale=True), True
+            return self.image_cache.get_fit_cached(screenshot_path, area_width, area_height, upscale=True), True
+        except Exception as e:
+            debug_print(f"[Gallery] Failed to cache image: {e}")
+            return None, True
+
+    def _draw_gallery_item(
+        self,
+        rom_file: ROMFile,
+        offset_x: int,
+        allow_process: bool,
+        layout: tuple[int, int, int, int, int, int, int],
+        bg_color: int,
+        text_color: int,
+        text_selected_color: int,
+    ) -> bool:
+        area_x, area_y, area_width, area_height, title_height, title_margin, title_bottom_gap = layout
+
+        image, has_screenshot = self._get_gallery_image(rom_file, area_width, area_height, allow_process)
+        if image is not None:
+            draw_x = area_x + (area_width - image.width) // 2 + offset_x
+            draw_y = area_y + (area_height - image.height) // 2
+            pyxel.blt(draw_x, draw_y, image.image, 0, 0, image.width, image.height)
+        else:
+            placeholder_x = area_x + offset_x
+            pyxel.rect(placeholder_x, area_y, area_width, area_height, 5)
+            if rom_file.is_directory:
+                placeholder_text = "[Folder]"
+            elif has_screenshot and not allow_process:
+                placeholder_text = "Loading"
+            else:
+                placeholder_text = "No Image"
+            text_x = placeholder_x + (area_width // 2) - len(placeholder_text) * 2
+            text_y = area_y + (area_height // 2) - 4
+            pyxel.text(text_x, text_y, placeholder_text, text_color)
+
+        title_y = min(
+            area_y + area_height + title_margin,
+            self.status_bar.y - title_height - title_bottom_gap,
+        )
+        display_name = self._fit_gallery_title(self._gallery_display_name(rom_file), max(16, pyxel.width - 8))
+        title_width = self._gallery_title_width(display_name)
+        title_x = pyxel.width // 2 - (title_width // 2) + offset_x
+        pyxel.rect(title_x - 2, title_y, title_width + 4, title_height, bg_color)
+        self._draw_gallery_title_text(title_x, title_y, display_name, text_selected_color)
+        return image is not None or not has_screenshot or allow_process
+
     def _draw_gallery_view(self):
         """Draw gallery view (museum-style, borderless fullscreen display, maintains aspect ratio)."""
         if not self.rom_files:
             return
-
-        # Update animation
-        if abs(self.gallery_animation_offset) > 0.01:
-            # Gradually approach 0 (easing)
-            self.gallery_animation_offset *= (1.0 - self.gallery_animation_speed)
-        else:
-            self.gallery_animation_offset = 0.0
 
         # Get theme colors
         theme = get_theme_manager()
@@ -768,109 +991,43 @@ class FileList(ScrollableList):
             return
 
         # Apply animation offset (horizontal slide)
-        anim_offset_x = int(self.gallery_animation_offset * pyxel.width)
+        anim_offset_x = int(round(self.gallery_animation_offset * pyxel.width))
 
-        # Screenshot display area (maximum size without border)
-        # Available area: from below border line y=18, top y=20 to bottom y=138
-        # Image size: (screen width-8)x106 (reserving 12px for title)
-        area_width = pyxel.width - 8
-        area_height = 106
-        area_x = 4
-        area_y = 20
+        layout = self._gallery_layout()
+        is_animating = self.gallery_animation_direction != 0
+        allow_process = not (
+            self.gallery_defer_image_load
+            and (
+                is_animating
+                or self.gallery_post_scroll_load_cooldown > 0
+            )
+        )
 
-        # Draw screenshot (always ON in gallery mode)
-        if self.current_category and not selected.is_directory:
-            # Load screenshot (using cache)
-            if self.current_screenshot_rom != selected.path:
-                self.current_screenshot_rom = selected.path
-                self.screenshot_loaded = False
+        if is_animating and self.gallery_previous_index is not None:
+            previous_index = self._clamp_item_index(self.gallery_previous_index, len(self.rom_files))
+            previous = self.rom_files[previous_index]
+            previous_offset_x = anim_offset_x - self.gallery_animation_direction * pyxel.width
+            self._draw_gallery_item(
+                previous,
+                previous_offset_x,
+                False,
+                layout,
+                bg_color,
+                text_color,
+                text_selected_color,
+            )
 
-                try:
-                    screenshot_path = self._find_screenshot_file(selected.path)
-                    if screenshot_path:
-                        # Load image
-                        img = Image.open(screenshot_path)
-                        orig_width, orig_height = img.size
-
-                        # Calculate size that fits while maintaining aspect ratio
-                        scale_w = area_width / orig_width
-                        scale_h = area_height / orig_height
-                        scale = min(scale_w, scale_h)
-
-                        new_width = int(orig_width * scale)
-                        new_height = int(orig_height * scale)
-
-                        # Resize
-                        img = img.resize((new_width, new_height), Image.Resampling.BILINEAR)
-                        img = img.convert('RGB')
-                        pixels = img.load()
-
-                        # Save to Pyxel image bank
-                        pyxel_img = pyxel.image(self.screenshot_cache_bank)
-                        for y in range(new_height):
-                            for x in range(new_width):
-                                r, g, b = pixels[x, y]
-                                color = self._rgb_to_pyxel_color(r, g, b)
-                                pyxel_img.pset(x, y, color)
-
-                        self.screenshot_loaded = True
-                        self._gallery_ss_width = new_width
-                        self._gallery_ss_height = new_height
-                        # Offset for center alignment
-                        self._gallery_ss_offset_x = (area_width - new_width) // 2
-                        self._gallery_ss_offset_y = (area_height - new_height) // 2
-                except:
-                    pass
-
-            # Draw screenshot
-            if self.screenshot_loaded:
-                ss_w = getattr(self, '_gallery_ss_width', area_width)
-                ss_h = getattr(self, '_gallery_ss_height', area_height)
-                ss_offset_x = getattr(self, '_gallery_ss_offset_x', 0)
-                ss_offset_y = getattr(self, '_gallery_ss_offset_y', 0)
-                draw_x = area_x + ss_offset_x + anim_offset_x
-                draw_y = area_y + ss_offset_y
-                pyxel.blt(draw_x, draw_y, self.screenshot_cache_bank, 0, 0, ss_w, ss_h)
-            else:
-                # Placeholder (gray frame)
-                placeholder_x = area_x + anim_offset_x
-                pyxel.rect(placeholder_x, area_y, area_width, area_height, 5)
-                no_img_text = "No Image"
-                text_x = placeholder_x + (area_width // 2) - len(no_img_text) * 2
-                text_y = area_y + (area_height // 2) - 4
-                pyxel.text(text_x, text_y, no_img_text, text_color)
-        else:
-            # For directories
-            placeholder_x = area_x + anim_offset_x
-            pyxel.rect(placeholder_x, area_y, area_width, area_height, 5)
-            if selected.is_directory:
-                folder_text = "[Folder]"
-                text_x = placeholder_x + (area_width // 2) - len(folder_text) * 2
-                text_y = area_y + (area_height // 2) - 4
-                pyxel.text(text_x, text_y, folder_text, text_color)
-
-        # Title display (below screenshot)
-        title_y = area_y + area_height + 4
-
-        # タイトルテキスト
-        if selected.is_directory:
-            display_name = "[" + selected.name + "]"
-        else:
-            display_name = self.rom_manager.get_rom_display_name(selected, max_length=38, max_width=155)
-
-            # Favorite mark
-            if self.persistence.is_favorite(selected.path):
-                display_name = display_name + " *"
-
-        # Draw title center-aligned (Japanese text supported)
-        title_width = get_japanese_text_width(display_name)
-        title_x = pyxel.width // 2 - (title_width // 2) + anim_offset_x
-
-        # Title background
-        pyxel.rect(title_x - 2, title_y, title_width + 4, 8, bg_color)
-
-        # タイトルテキスト
-        draw_japanese_text(title_x, title_y, display_name, text_selected_color)
+        selected_ready = self._draw_gallery_item(
+            selected,
+            anim_offset_x,
+            allow_process,
+            layout,
+            bg_color,
+            text_color,
+            text_selected_color,
+        )
+        if allow_process and selected_ready:
+            self.gallery_pending_deferred_image_load = False
 
     def _launch_rom(self, rom_file: ROMFile):
         """
@@ -900,17 +1057,24 @@ class FileList(ScrollableList):
         pyxel.cls(bg_color)
 
         # Draw category title (上部1行目)
-        self.category_title.draw()
+        if self.view_mode == "gallery":
+            self._draw_gallery_header()
+        else:
+            self.category_title.draw()
 
         # Draw system status (top right)
         self.system_status.draw()
 
         # Draw counter (上部2行目)
-        if self.rom_files:
+        # Gallery mode shows the counter in the status bar, so the category title
+        # can use the full header height without text collisions.
+        if self.rom_files and self.view_mode != "gallery":
             self.counter.draw()
 
-        # Draw border line below counter
-        pyxel.line(2, 18, pyxel.width - 3, 18, border_color)
+        # Draw border line below the header. Gallery mode uses two header rows:
+        # status on top, emulator name below.
+        header_line_y = 20 if self.view_mode == "gallery" else 18
+        pyxel.line(2, header_line_y, pyxel.width - 3, header_line_y, border_color)
 
         # Draw main window frame (borderless for both modes)
 
@@ -950,7 +1114,11 @@ class FileList(ScrollableList):
             self.status_bar.set_text(
                 left=left_text,
                 center="",
-                right=f"{len(self.rom_files)}"
+                right=(
+                    f"{self.selected_index + 1}/{len(self.rom_files)}"
+                    if self.view_mode == "gallery" and self.rom_files
+                    else f"{len(self.rom_files)}"
+                )
             )
         self.status_bar.draw()
 

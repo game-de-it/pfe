@@ -4,10 +4,11 @@ Uses external scripts for cross-platform compatibility.
 """
 
 import os
-import subprocess
+import time
 from datetime import datetime
 from typing import Optional
-from debug import debug_print
+from pfe_app.debug import debug_print
+from pfe_app.script_runner import ScriptRunner
 
 
 class SystemMonitor:
@@ -21,6 +22,7 @@ class SystemMonitor:
             config: Config object with global_vars
         """
         self.config = config
+        self.script_runner = ScriptRunner()
 
         # Script paths from pfe.cfg
         self.scripts_dir = "scripts"
@@ -49,14 +51,25 @@ class SystemMonitor:
         self.wifi_interface = config.global_vars.get('WIFI_INTERFACE', 'wlan0')
 
         # Feature flags
-        self.show_battery = config.global_vars.get('SHOW_BATTERY', '1') == '1'
-        self.show_network = config.global_vars.get('SHOW_NETWORK', '1') == '1'
-        self.show_clock = config.global_vars.get('SHOW_CLOCK', '1') == '1'
+        self.show_battery = self._get_bool(['SHOW_BATTERY'], True)
+        self.show_network = self._get_bool(['SHOW_NETWORK'], True)
+        self.show_clock = self._get_bool(['SHOW_CLOCK', 'SHOW_TIME'], True)
 
         # Cache for network status (to avoid frequent script calls)
         self._network_status = None
-        self._network_check_counter = 0
-        self._network_check_interval = 30  # Check every 30 frames (1 second at 30fps)
+        self._network_next_check_at = 0.0
+        self._network_check_interval_seconds = self._get_float(
+            [
+                'NETWORK_CHECK_INTERVAL_SECONDS',
+                'NETWORK_STATUS_INTERVAL_SECONDS',
+                'NETWORK_CHECK_INTERVAL',
+            ],
+            60.0,
+        )
+        self._network_script_log_interval = self._get_float(
+            ['NETWORK_SCRIPT_LOG_INTERVAL_SECONDS', 'NETWORK_LOG_INTERVAL_SECONDS'],
+            self._network_check_interval_seconds,
+        )
 
         # Available governors
         self.available_governors = ['ondemand', 'performance']
@@ -66,6 +79,8 @@ class SystemMonitor:
         self._battery_status_cache = None
         self._battery_check_counter = 0
         self._battery_check_interval = 60  # Check every 60 frames (approximately 2 seconds)
+        self._battery_cache_ready = False
+        self._battery_script_log_interval = 60.0
 
         # Cache for time (to reduce CPU load)
         self._time_cache = ""
@@ -74,6 +89,25 @@ class SystemMonitor:
 
         # Check script availability
         self._check_scripts()
+
+    def _get_bool(self, keys: list[str], default: bool) -> bool:
+        """Read a bool-ish config value from one of several aliases."""
+        for key in keys:
+            if key in self.config.global_vars:
+                value = str(self.config.global_vars[key]).strip().lower()
+                return value in ('1', 'true', 'yes', 'on')
+        return default
+
+    def _get_float(self, keys: list[str], default: float) -> float:
+        """Read a numeric config value from one of several aliases."""
+        for key in keys:
+            if key in self.config.global_vars:
+                try:
+                    return max(0.0, float(str(self.config.global_vars[key]).strip()))
+                except (TypeError, ValueError):
+                    debug_print(f"[SystemMonitor] Invalid numeric setting {key}: {self.config.global_vars[key]}")
+                    return default
+        return default
 
     def _check_scripts(self):
         """Check if required scripts are available."""
@@ -86,7 +120,14 @@ class SystemMonitor:
         if not os.path.exists(self.cpu_governor_set_script):
             debug_print(f"[SystemMonitor] CPU governor set script not found: {self.cpu_governor_set_script}")
 
-    def _run_script(self, script_path: str, args: list = None, timeout: int = 5) -> Optional[str]:
+    def _run_script(
+        self,
+        script_path: str,
+        args: list = None,
+        timeout: int = 5,
+        log_interval_seconds: float | None = None,
+        log_key: str | None = None,
+    ) -> Optional[str]:
         """
         Run an external script and return its output.
 
@@ -101,34 +142,22 @@ class SystemMonitor:
         if not os.path.exists(script_path):
             return None
 
-        try:
-            cmd = ["sh", script_path]
-            if args:
-                cmd.extend(args)
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-
-            if result.returncode == 0:
-                return result.stdout.strip()
-            else:
-                debug_print(f"[SystemMonitor] Script failed: {script_path}, stderr: {result.stderr}")
-                return None
-
-        except subprocess.TimeoutExpired:
-            debug_print(f"[SystemMonitor] Script timeout: {script_path}")
-            return None
-        except Exception as e:
-            debug_print(f"[SystemMonitor] Script error: {script_path}, {e}")
-            return None
+        return self.script_runner.run_text(
+            script_path,
+            args=args,
+            timeout=timeout,
+            log_interval_seconds=log_interval_seconds,
+            log_key=log_key,
+        )
 
     def _update_battery_cache(self):
         """Update battery cache from script."""
-        output = self._run_script(self.battery_script)
+        output = self._run_script(
+            self.battery_script,
+            log_interval_seconds=self._battery_script_log_interval,
+            log_key="battery_status",
+        )
+        self._battery_cache_ready = True
         if output:
             parts = output.split(None, 1)
             if len(parts) >= 1:
@@ -154,7 +183,7 @@ class SystemMonitor:
 
         # Use cache (avoid script calls every frame)
         self._battery_check_counter += 1
-        if self._battery_level_cache is not None and self._battery_check_counter < self._battery_check_interval:
+        if self._battery_cache_ready and self._battery_check_counter < self._battery_check_interval:
             return self._battery_level_cache
 
         self._battery_check_counter = 0
@@ -172,7 +201,7 @@ class SystemMonitor:
             return None
 
         # Use cache (updated at the same time as battery_level)
-        if self._battery_status_cache is not None and self._battery_check_counter > 0:
+        if self._battery_cache_ready:
             return self._battery_status_cache
 
         # Force update if no cache
@@ -189,15 +218,19 @@ class SystemMonitor:
         if not self.show_network:
             return False
 
-        # Check periodically (not every frame)
-        self._network_check_counter += 1
-        if self._network_status is not None and self._network_check_counter < self._network_check_interval:
+        # Network status is informational, so keep script calls infrequent.
+        now = time.monotonic()
+        if self._network_status is not None and now < self._network_next_check_at:
             return self._network_status
 
-        self._network_check_counter = 0
-
-        output = self._run_script(self.network_script, timeout=3)
+        output = self._run_script(
+            self.network_script,
+            timeout=3,
+            log_interval_seconds=self._network_script_log_interval,
+            log_key="network_status",
+        )
         self._network_status = (output == "connected")
+        self._network_next_check_at = now + self._network_check_interval_seconds
         return self._network_status
 
     def get_wifi_status(self) -> bool:
@@ -303,27 +336,11 @@ class SystemMonitor:
             debug_print(f"[SystemMonitor] CPU governor set script not found: {self.cpu_governor_set_script}")
             return False
 
-        try:
-            result = subprocess.run(
-                ["sh", self.cpu_governor_set_script, governor],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            success = (result.returncode == 0)
-            if success:
-                debug_print(f"[SystemMonitor] CPU governor set to: {governor}")
-            else:
-                debug_print(f"[SystemMonitor] Failed to set CPU governor: {result.stderr}")
-            return success
-
-        except subprocess.TimeoutExpired:
-            debug_print("[SystemMonitor] CPU governor set timeout")
-            return False
-        except Exception as e:
-            debug_print(f"[SystemMonitor] CPU governor set error: {e}")
-            return False
+        result = self.script_runner.run(self.cpu_governor_set_script, args=[governor], timeout=5)
+        if result and result.ok:
+            debug_print(f"[SystemMonitor] CPU governor set to: {governor}")
+            return True
+        return False
 
     def get_available_governors(self) -> list:
         """
@@ -352,36 +369,19 @@ class SystemMonitor:
             debug_print(f"[SystemMonitor] DateTime set script not found: {self.datetime_set_script}")
             return False
 
-        try:
-            # Format arguments with leading zeros
-            args = [
-                str(year),
-                f"{month:02d}",
-                f"{day:02d}",
-                f"{hour:02d}",
-                f"{minute:02d}"
-            ]
-
-            result = subprocess.run(
-                ["sh", self.datetime_set_script] + args,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            success = (result.returncode == 0)
-            if success:
-                debug_print(f"[SystemMonitor] DateTime set to: {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}")
-            else:
-                debug_print(f"[SystemMonitor] Failed to set datetime: {result.stderr}")
-            return success
-
-        except subprocess.TimeoutExpired:
-            debug_print("[SystemMonitor] DateTime set timeout")
-            return False
-        except Exception as e:
-            debug_print(f"[SystemMonitor] DateTime set error: {e}")
-            return False
+        # Format arguments with leading zeros
+        args = [
+            str(year),
+            f"{month:02d}",
+            f"{day:02d}",
+            f"{hour:02d}",
+            f"{minute:02d}"
+        ]
+        result = self.script_runner.run(self.datetime_set_script, args=args, timeout=10)
+        if result and result.ok:
+            debug_print(f"[SystemMonitor] DateTime set to: {year}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}")
+            return True
+        return False
 
     def get_current_datetime(self) -> tuple:
         """

@@ -1,0 +1,56 @@
+; PFE retroarch.cfg-style configuration example
+; Existing PFE -TITLE/-DIR/-EXT/-CORE blocks are still supported.
+
+rom_base = "/roms"
+screenshot_dir = "assets/screenshots"
+bgm_dir = "assets/bgm"
+splash_time = "3"
+
+launcher.ra = "./bin/retroarch.sh"
+launcher.sa_ppsspp = "/usr/local/bin/ppsspp.sh"
+launcher.resume_after_game = "true"
+
+ui.font_backend = "auto"
+ui.bdf_font_path = "assets/fonts/umplus_j10r.bdf"
+ui.font_path = "assets/fonts/misaki_gothic.ttf"
+
+image.palette_file = "data/pfe_generated.pyxpal"
+image.palette_preserve_ui = "true"
+
+log.debug = "false"
+log.level = "DEBUG"
+log.file = "data/debug.log"
+log.console = "true"
+
+script.battery = "./scripts/get_battery.sh"
+script.network = "./scripts/get_network.sh"
+status.network_check_interval_seconds = "60"
+script.cpu_governor_get = "./scripts/get_cpu_governor.sh"
+script.cpu_governor_set = "./scripts/set_cpu_governor.sh"
+script.wifi_scan = "./scripts/wifi_scan.sh"
+script.wifi_connect = "./scripts/wifi_connect.sh"
+script.wifi_status = "./scripts/wifi_status.sh"
+script.wifi_toggle = "./scripts/wifi_toggle.sh"
+script.reboot = "./scripts/system_reboot.sh"
+script.shutdown = "./scripts/system_shutdown.sh"
+
+system.nes.name = "ファミコン"
+system.nes.dir = "nes"
+system.nes.ext = "nes|unf|fds"
+system.nes.type = "RA"
+system.nes.core = "nestopia|fceumm"
+system.nes.title_img = "assets/images/nes.png"
+
+system.snes.name = "スーファミ"
+system.snes.dir = "snes"
+system.snes.ext = "sfc|smc"
+system.snes.type = "RA"
+system.snes.core = "snes9x|bsnes"
+system.snes.title_img = "assets/images/snes.png"
+
+system.gba.name = "GBA"
+system.gba.dir = "gba"
+system.gba.ext = "gba|zip"
+system.gba.type = "RA"
+system.gba.core = "mgba|vba_next"
+system.gba.title_img = "assets/images/gba.png"

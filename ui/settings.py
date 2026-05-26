@@ -6,11 +6,11 @@ import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText
 from ui.window import DQWindow
-from japanese_text import draw_japanese_text, get_japanese_text_width
-from theme_manager import get_theme_manager
-from debug import debug_print
-from system_monitor import get_system_monitor
-from brightness_manager import get_brightness_manager
+from pfe_app.japanese_text import draw_japanese_text, get_japanese_text_width
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.debug import debug_print
+from pfe_app.system_monitor import get_system_monitor
+from pfe_app.brightness_manager import get_brightness_manager
 
 
 class Settings(ScrollableList):
@@ -59,13 +59,16 @@ class Settings(ScrollableList):
         self.settings_items = [
             {"name": "Brightness", "type": "toggle", "key": "brightness", "values": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], "current": 4},
             {"name": "Theme", "type": "toggle", "key": "theme", "values": theme_ids, "display_values": theme_names, "current": current_theme_index},
-            {"name": "CPU Governor", "type": "toggle", "key": "cpu_governor", "values": cpu_governor_values, "current": cpu_governor_index},
+            {"name": "CPU Governor", "display_name": "CPU Gov.", "type": "toggle", "key": "cpu_governor", "values": cpu_governor_values, "display_values": ["Ondemand", "Performance"], "current": cpu_governor_index},
             {"name": "Resolution", "type": "toggle", "key": "resolution", "values": resolution_values, "display_values": ["160x160", "214x160"], "current": resolution_index},
             {"name": "Date/Time", "type": "submenu", "key": "datetime"},
             {"name": "WiFi", "type": "submenu", "key": "wifi"},
+            {"name": "Bluetooth", "type": "submenu", "key": "bluetooth"},
             {"name": "Key Config", "type": "submenu", "key": "key_config_menu"},
             {"name": "BGM Config", "type": "submenu", "key": "bgm_config"},
             {"name": "Statistics", "type": "submenu", "key": "statistics"},
+            {"name": "Image Cache", "type": "submenu", "key": "image_cache"},
+            {"name": "Help", "type": "submenu", "key": "help"},
             {"name": "About", "type": "submenu", "key": "about"},
             {"name": "Quit", "type": "submenu", "key": "quit"},
         ]
@@ -163,7 +166,7 @@ class Settings(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Navigation
         if self.input_handler.is_pressed_with_repeat(Action.UP):
@@ -196,17 +199,23 @@ class Settings(ScrollableList):
         # Enter submenu
         if self.input_handler.is_pressed(Action.A):
             if selected and selected["type"] == "submenu":
-                from state_manager import AppState
+                from pfe_app.state_manager import AppState
                 if selected["key"] == "datetime":
                     self.state_manager.change_state(AppState.DATETIME_SETTINGS)
                 elif selected["key"] == "wifi":
                     self.state_manager.change_state(AppState.WIFI_SETTINGS)
+                elif selected["key"] == "bluetooth":
+                    self.state_manager.change_state(AppState.BLUETOOTH_SETTINGS)
                 elif selected["key"] == "key_config_menu":
                     self.state_manager.change_state(AppState.KEY_CONFIG_MENU)
                 elif selected["key"] == "bgm_config":
                     self.state_manager.change_state(AppState.BGM_CONFIG)
                 elif selected["key"] == "statistics":
                     self.state_manager.change_state(AppState.STATISTICS)
+                elif selected["key"] == "image_cache":
+                    self.state_manager.change_state(AppState.IMAGE_CACHE)
+                elif selected["key"] == "help":
+                    self.state_manager.change_state(AppState.HELP)
                 elif selected["key"] == "about":
                     self.state_manager.change_state(AppState.ABOUT)
                 elif selected["key"] == "quit":
@@ -234,6 +243,25 @@ class Settings(ScrollableList):
             debug_print(f"Setting brightness to: {brightness_level}")
             if self.brightness_manager.is_available():
                 self.brightness_manager.set_brightness(brightness_level)
+
+    def _text_width(self, text: str) -> int:
+        """Measure text with the active UI font, falling back to Pyxel width."""
+        try:
+            return get_japanese_text_width(text)
+        except Exception:
+            return len(text) * 4
+
+    def _fit_text(self, text: str, max_width: int) -> str:
+        """Trim text so it fits inside max_width pixels."""
+        if self._text_width(text) <= max_width:
+            return text
+        if max_width <= self._text_width(".."):
+            return ""
+
+        trimmed = text
+        while trimmed and self._text_width(trimmed + "..") > max_width:
+            trimmed = trimmed[:-1]
+        return trimmed + ".." if trimmed else ""
 
     def draw(self):
         """Draw settings screen."""
@@ -276,7 +304,7 @@ class Settings(ScrollableList):
 
             # Draw setting name
             color = text_selected_color if index == self.selected_index else text_color
-            draw_japanese_text(6, y, item["name"], color)
+            label = item.get("display_name", item["name"])
 
             # Draw value
             if item["type"] == "toggle":
@@ -287,11 +315,25 @@ class Settings(ScrollableList):
                     display_value = item["values"][item["current"]]
                 value_text = f"< {display_value} >"
 
-                # Right-align the value to avoid overlapping with window border
+                # Right-align the value, and trim the label if the active font is wide.
+                content_left = 6
+                content_right = pyxel.width - 10
+                content_width = content_right - content_left
                 value_width = get_japanese_text_width(value_text)
-                value_x = pyxel.width - 10 - value_width
+                if value_width > content_width - 20:
+                    value_text = self._fit_text(value_text, content_width - 20)
+                    value_width = self._text_width(value_text)
+                max_label_width = max(20, content_width - value_width - 6)
+                label = self._fit_text(label, max_label_width)
+                draw_japanese_text(content_left, y, label, color)
+
+                value_x = content_right - value_width
                 draw_japanese_text(value_x, y, value_text, color)
             elif item["type"] == "submenu":
+                content_left = 6
+                content_right = pyxel.width - 30
+                label = self._fit_text(label, content_right - content_left - 4)
+                draw_japanese_text(content_left, y, label, color)
                 submenu_x = pyxel.width - 30
                 draw_japanese_text(submenu_x, y, ">", color)
 

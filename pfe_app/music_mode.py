@@ -3,7 +3,7 @@ Music Mode manager.
 Provides a low-power music playback mode with screen off.
 """
 
-from debug import debug_print
+from pfe_app.debug import debug_print
 
 
 class MusicModeManager:
@@ -57,14 +57,14 @@ class MusicModeManager:
     def _apply_music_mode_settings(self):
         """Apply Music Mode settings (brightness off, ondemand governor)."""
         # Set brightness to 0
-        from brightness_manager import get_brightness_manager
+        from pfe_app.brightness_manager import get_brightness_manager
         brightness_manager = get_brightness_manager()
         if brightness_manager.is_available():
             brightness_manager.set_brightness_off()
             debug_print("Music Mode: Brightness set to 0")
 
         # Set CPU governor to ondemand
-        from system_monitor import get_system_monitor
+        from pfe_app.system_monitor import get_system_monitor
         system_monitor = get_system_monitor()
         if system_monitor:
             system_monitor.set_cpu_governor("ondemand")
@@ -83,7 +83,7 @@ class MusicModeManager:
         if not self.active:
             return False
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
         import pyxel
 
         # Check for X + Y simultaneous press
@@ -109,7 +109,7 @@ class MusicModeManager:
         if not self.active:
             return False
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Allow X and Y buttons (for exit combo)
         allowed_actions = [Action.X, Action.Y]

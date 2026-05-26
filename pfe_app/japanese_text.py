@@ -7,7 +7,7 @@ Note: PyxelUniversalFont is lazy-imported (to reduce startup time due to numpy d
 
 import pyxel
 import os
-from debug import debug_print
+from pfe_app.debug import debug_print
 
 # Global variables for lazy import
 _puf_module = None
@@ -34,12 +34,36 @@ def _get_puf():
     return _puf_module
 
 
+def _default_bdf_font_path() -> str:
+    """Find a bundled pixel BDF font if one is available."""
+    candidates = [
+        "assets/fonts/umplus_j10r.bdf",
+        "assets/fonts/misaki_gothic.bdf",
+    ]
+    try:
+        pyxel_dir = os.path.dirname(pyxel.__file__)
+        candidates.extend([
+            os.path.join(pyxel_dir, "examples", "assets", "umplus_j10r.bdf"),
+            os.path.join(pyxel_dir, "examples", "assets", "umplus_j12r.bdf"),
+        ])
+    except Exception:
+        pass
+
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return ""
+
+
 class JapaneseText:
     """Japanese text rendering helper"""
 
-    def __init__(self, font_path=None, lazy_init=True):
+    def __init__(self, font_path=None, backend="auto", bdf_font_path=None, lazy_init=True):
         self.writer = None
+        self.bdf_font = None
         self.font_path = font_path
+        self.backend = (backend or "auto").lower()
+        self.bdf_font_path = bdf_font_path
         self.font_size = 8
         self._initialized = False
         self._lazy_init = lazy_init
@@ -54,12 +78,35 @@ class JapaneseText:
             return
 
         self._initialized = True
-        puf = _get_puf()
 
+        if self.backend in ("auto", "bdf") and self._init_bdf_font():
+            return
+
+        if self.backend == "bdf":
+            debug_print("[Font] BDF backend requested but unavailable, using Pyxel default font")
+            return
+
+        puf = _get_puf()
         if puf is not None:
             self._init_universal_font(puf)
         else:
             debug_print("[Font] Universal font not available, using Pyxel default font")
+
+    def _init_bdf_font(self) -> bool:
+        """Initialize Pyxel BDF font."""
+        font_path = self.bdf_font_path or _default_bdf_font_path()
+        if not font_path:
+            debug_print("[Font] No BDF font found")
+            return False
+
+        try:
+            self.bdf_font = pyxel.Font(font_path)
+            debug_print(f"[Font] BDF font loaded: {font_path}")
+            return True
+        except Exception as e:
+            debug_print(f"[Font] Failed to initialize BDF font: {e}")
+            self.bdf_font = None
+            return False
 
     def _init_universal_font(self, puf):
         """Initialize PyxelUniversalFont"""
@@ -109,6 +156,13 @@ class JapaneseText:
         # Lazy initialization
         self._ensure_initialized()
 
+        if self.bdf_font:
+            try:
+                pyxel.text(x, y, text, color, self.bdf_font)
+                return
+            except Exception as e:
+                debug_print(f"[Font] Error drawing text with BDF font: {e}")
+
         # If Universal font is available
         if self.writer:
             try:
@@ -130,6 +184,12 @@ class JapaneseText:
         # Lazy initialization
         self._ensure_initialized()
 
+        if self.bdf_font:
+            try:
+                return self.bdf_font.text_width(text)
+            except Exception:
+                pass
+
         # If Universal font is available
         if self.writer:
             try:
@@ -149,34 +209,114 @@ class JapaneseText:
 # Global instance
 _japanese_text = None
 _font_path_config = None
+_font_backend_config = "auto"
+_bdf_font_path_config = None
+_small_writer = None
+_small_writer_attempted = False
 
 
-def init_japanese_text(font_path=None):
+def init_japanese_text(font_path=None, backend="auto", bdf_font_path=None):
     """
     Initialize Japanese text system (only saves config, actual initialization is deferred)
 
     Args:
         font_path: Path to font file (optional)
+        backend: auto, bdf, or ttf
+        bdf_font_path: Path to BDF font file (optional)
     """
-    global _japanese_text, _font_path_config
+    global _japanese_text, _font_path_config, _font_backend_config, _bdf_font_path_config
+    global _small_writer, _small_writer_attempted
     _font_path_config = font_path
+    _font_backend_config = backend or "auto"
+    _bdf_font_path_config = bdf_font_path
+    _small_writer = None
+    _small_writer_attempted = False
     # Lazy initialization: create instance but defer font loading
-    if _japanese_text is None:
-        _japanese_text = JapaneseText(font_path=font_path, lazy_init=True)
+    _japanese_text = JapaneseText(
+        font_path=font_path,
+        backend=_font_backend_config,
+        bdf_font_path=bdf_font_path,
+        lazy_init=True,
+    )
     return _japanese_text
 
 
 def draw_japanese_text(x: int, y: int, text: str, color: int):
     """Draw Japanese text (global function)"""
-    global _japanese_text, _font_path_config
+    global _japanese_text, _font_path_config, _font_backend_config, _bdf_font_path_config
     if _japanese_text is None:
-        _japanese_text = JapaneseText(font_path=_font_path_config, lazy_init=True)
+        _japanese_text = JapaneseText(
+            font_path=_font_path_config,
+            backend=_font_backend_config,
+            bdf_font_path=_bdf_font_path_config,
+            lazy_init=True,
+        )
     _japanese_text.draw_text(x, y, text, color)
 
 
 def get_japanese_text_width(text: str) -> int:
     """Get Japanese text width (global function)"""
-    global _japanese_text, _font_path_config
+    global _japanese_text, _font_path_config, _font_backend_config, _bdf_font_path_config
     if _japanese_text is None:
-        _japanese_text = JapaneseText(font_path=_font_path_config, lazy_init=True)
+        _japanese_text = JapaneseText(
+            font_path=_font_path_config,
+            backend=_font_backend_config,
+            bdf_font_path=_bdf_font_path_config,
+            lazy_init=True,
+        )
     return _japanese_text.get_text_width(text)
+
+
+def _get_small_writer():
+    """Return a small TTF writer for compact labels when non-ASCII text is needed."""
+    global _small_writer, _small_writer_attempted
+    if _small_writer_attempted:
+        return _small_writer
+
+    _small_writer_attempted = True
+    puf = _get_puf()
+    if puf is None:
+        return None
+
+    candidates = []
+    if _font_path_config and os.path.exists(_font_path_config):
+        candidates.append(_font_path_config)
+    candidates.extend(["misaki_gothic.ttf", "IPA_Gothic.ttf"])
+
+    for candidate in candidates:
+        try:
+            _small_writer = puf.Writer(candidate)
+            return _small_writer
+        except Exception:
+            continue
+    return None
+
+
+def draw_japanese_text_small(x: int, y: int, text: str, color: int, size: int = 6):
+    """Draw compact text. ASCII uses Pyxel's small font; Japanese uses PUF if available."""
+    if not text:
+        return
+
+    if all(ord(c) < 128 for c in text):
+        pyxel.text(x, y, text, color)
+        return
+
+    writer = _get_small_writer()
+    if writer:
+        try:
+            writer.draw(x, y, text, size, color)
+            return
+        except Exception as e:
+            debug_print(f"[Font] Error drawing small text: {e}")
+
+    draw_japanese_text(x, y, text, color)
+
+
+def get_japanese_text_width_small(text: str, size: int = 6) -> int:
+    """Estimate compact text width."""
+    if not text:
+        return 0
+    width = 0
+    for char in text:
+        width += 4 if ord(char) < 128 else size
+    return width

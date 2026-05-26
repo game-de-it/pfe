@@ -8,10 +8,11 @@
 #
 
 INTERFACE="${WIFI_INTERFACE:-wlan0}"
+WIFI_SCAN_WAIT_SECONDS="${WIFI_SCAN_WAIT_SECONDS:-6}"
 
 # Trigger scan
 iwctl station "$INTERFACE" scan 2>/dev/null
-sleep 3
+sleep "$WIFI_SCAN_WAIT_SECONDS"
 
 # Get networks
 # iwctl station wlan0 get-networks outputs formatted table

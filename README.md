@@ -40,8 +40,7 @@ Settings menu options (in order):
 - **Resolution**: Screen resolution (1:1 160x160 / 4:3 214x160) - requires restart
 - **WiFi**: Network configuration
 - **Key Config** (submenu):
-  - Btn Layout: Button layout (Nintendo / Xbox)
-  - Key Mapping: Custom key bindings
+  - Key Mapping Wizard: Custom gamepad/keyboard bindings
 - **BGM Config** (submenu):
   - BGM ON/OFF: Background music toggle
   - BGM Volume: Volume level control
@@ -62,12 +61,28 @@ Settings menu options (in order):
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
+For ROCKNIX, see the Japanese [ROCKNIX setup guide](docs/ROCKNIX_JP.md). It covers the Ports-based install flow, PFE dependency installation, PFE/EmulationStation switching, Pyxel games, and recovery notes.
+
+## Documentation
+
+| Document | Audience | Contents |
+|----------|----------|----------|
+| [INSTALL.md](INSTALL.md) | General Linux/PC users | Dependencies, configuration, and launching |
+| [docs/ROCKNIX_JP.md](docs/ROCKNIX_JP.md) | ROCKNIX users | Ports-based setup, frontend switching, troubleshooting |
+| [tools/rocknix/README_JP.md](tools/rocknix/README_JP.md) | ROCKNIX script maintainers | Script roles and detailed options |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Developers | Internal structure and extension points |
+| [docs/RELEASE_JP.md](docs/RELEASE_JP.md) | Release maintainers | ROCKNIX release checks, zip packaging, and device smoke tests |
+
+For ROCKNIX release packaging, use the Japanese [release checklist](docs/RELEASE_JP.md).
+
 ### Quick Start
 
 1. Install dependencies:
 ```bash
-pip install -r requirements.txt
+./scripts/install_deps.sh
 ```
+
+On ROCKNIX/plumOS, the system Python can have pip bytecode issues. `scripts/install_deps.sh` installs dependencies in a way that avoids that problem. To use a specific Python, run `PFE_PYTHON=/path/to/python3 ./scripts/install_deps.sh`.
 
 2. Copy and configure settings:
 ```bash
@@ -95,6 +110,12 @@ The launcher automatically restarts after exiting a game and restores your previ
 #### Direct Run (Manual restart required)
 ```bash
 python3 main.py
+```
+
+When using a dedicated Python on plumOS or similar systems:
+
+```bash
+PFE_PYTHON=/storage/pyxel_Python/bin/python3 ./launcher.sh
 ```
 
 ### Controls
@@ -351,16 +372,21 @@ To use alternative scripts, copy them to `scripts/` or update paths in `data/pfe
 ```
 ├── main.py                 # Entry point
 ├── launcher.sh             # Auto-restart script
-├── config.py               # Config parser
-├── state_manager.py        # UI state machine
-├── input_handler.py        # Input management
-├── rom_manager.py          # ROM scanning
-├── launcher.py             # Emulator execution
-├── persistence.py          # Settings/history storage
-├── bgm_manager.py          # Background music
-├── system_monitor.py       # Battery/network/CPU
-├── theme_manager.py        # Theme system
-├── japanese_text.py        # Japanese font rendering
+├── pfe_app/                # Internal application modules
+│   ├── config.py           # Config parser
+│   ├── state_manager.py    # UI state machine
+│   ├── input_handler.py    # Input management
+│   ├── rom_manager.py      # ROM scanning
+│   ├── launcher.py         # Emulator execution
+│   ├── persistence.py      # Settings/history storage
+│   ├── bgm_manager.py      # Background music
+│   ├── bgm_worker.py       # Background music worker process
+│   ├── image_cache.py      # Image loading/cache
+│   ├── palette_manager.py  # Pyxel palette management
+│   ├── script_runner.py    # External script execution
+│   ├── system_monitor.py   # Battery/network/CPU
+│   ├── theme_manager.py    # Theme system
+│   └── japanese_text.py    # Japanese font rendering
 ├── ui/
 │   ├── base.py             # Base UI classes
 │   ├── components.py       # Reusable components
@@ -418,12 +444,12 @@ To use alternative scripts, copy them to `scripts/` or update paths in `data/pfe
 - Ensure directories exist and are readable
 
 ### Launch Failures
-- Verify emulator paths (TYPE_RA, TYPE_PPSSPP)
+- Verify emulator paths (`TYPE_RA`, `TYPE_SA_*`)
 - Check core names for RetroArch
 - Review console output for error messages
 
 ### BGM Not Playing
-- Ensure `assets/bgm.mp3` exists
+- Ensure `BGM_DIR` points to a directory with supported audio files, such as `assets/bgm/`
 - Check BGM is enabled in Settings
 - Verify `SDL_AUDIODRIVER=alsa` is exported in launcher.sh
 
