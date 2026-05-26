@@ -121,40 +121,7 @@ GitHub CLIを使う場合は、次のように作成できます。Release本文
 gh release create v1.0.0 dist/pfe-rocknix-v1.0.0-20260527.zip --title "PFE v1.0.0" --notes-file docs/releases/v1.0.0.md
 ```
 
-Release本文には、GitHub自動生成のSource codeではなく、AssetsのROCKNIX向けZIPを使うよう明記します。`v1.0.0` の本文は次の内容です。
-
-```md
-# PFE v1.0.0
-
-ROCKNIX向けのPFE正式リリースです。
-
-## ダウンロード
-
-Assets から `pfe-rocknix-v1.0.0-YYYYMMDD.zip` をダウンロードしてください。
-GitHubが自動生成する `Source code.zip` / `Source code.tar.gz` ではなく、上記ZIPを使用してください。
-
-## ROCKNIXでの導入
-
-1. ZIP内の `pfe/` を `/roms/pfe` に配置
-2. ZIP内の `ports/` の中身を `/roms/ports` に配置
-3. EmulationStationのPortsから `01_install_pyxel.sh` を実行
-4. 続けて `02_install_pfe.sh` を実行
-5. PFEへ切り替える場合は `Switch_to_PFE.sh` を実行
-
-## 主な内容
-
-- ROCKNIX向けPFE導入スクリプト
-- Pyxel 2.9.5対応
-- RetroArch / Pyxel / スタンドアロンエミュレータ起動
-- PFE / EmulationStation切り替え
-- スクリーンショットギャラリー
-
-## 注意
-
-- `02_install_pfe.sh` はPFE依存関係を確認してからサービス登録します。
-- `Switch_to_PFE.sh` はPFEサービスが起動できた場合だけ、次回起動時のフロントエンドをPFEへ保存します。
-- 詳細は `pfe/docs/ROCKNIX_JP.md` を参照してください。
-```
+Release本文には、GitHub自動生成のSource codeではなく、AssetsのROCKNIX向けZIPを使うよう明記します。`v1.0.0` では、日本語と英語を併記した `docs/releases/v1.0.0.md` を本文として使います。
 
 ## ROCKNIX実機確認
 
