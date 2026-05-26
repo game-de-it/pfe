@@ -96,7 +96,10 @@ EmulationStationのPortsから、次の順に実行します。
 - PFE本体の `requirements.txt` を `/storage/.local` へ `pip --user --no-compile` でインストール
 - `pyxel`、`Pillow`、`pygame`、`pyxel-universal-font` のimportチェック
 - `/storage/.config/system.d/pfe.service` を作成
-- `WorkingDirectory=/roms/pfe` を設定
+- `/storage/.config/autostart/99-pfe-frontend` を作成し、起動時のフロントエンド選択を再適用
+- SD2上の `/roms/pfe` が遅れて見える場合に備えて、PFE本体ファイルを待機
+- Pyxel起動前にWaylandソケットを待機
+- `WorkingDirectory=/storage` を設定
 - `ExecStart=/bin/bash /roms/pfe/launcher.sh` を設定
 - PFE本体の権限を補正
 - RetroArchのスクリーンショット設定をPFE向けに補正
@@ -112,9 +115,11 @@ EmulationStationのPortsから、次の順に実行します。
 主な処理:
 
 - `pfe.service` が登録済みか確認
-- `pfe.service` を起動し、activeになることを確認
+- systemdの一時ジョブへ切り替え処理を渡す
+- `essway.service` を停止してから `pfe.service` を起動
+- `pfe.service` がactiveで、`main.py` が数秒安定して動作することを確認
 - 起動できた場合だけ、次回OS起動時もPFEが選ばれるように状態を保存
-- `essway.service` を停止
+- 起動できない場合はEmulationStationへ戻し、ES側の選択状態を維持
 
 PFEが起動できない場合は、起動対象をPFEへ保存せずにエラーで停止します。これにより、依存関係不足などでPFEが落ちる状態のままESへ戻れなくなる事故を避けます。
 
@@ -124,9 +129,12 @@ PFEが起動できない場合は、起動対象をPFEへ保存せずにエラ�
 /storage/.config/pfe/frontend.conf
 /storage/.config/profile.d/090-ui_service
 /storage/.config/autostart/99-pfe-frontend
+/storage/.config/pfe/switch_to_pfe_worker.sh
+/storage/.config/pfe/frontend-autostart.log
+/storage/.config/pfe/switch-to-pfe.log
 ```
 
-PFEを選んだ状態では、OS再起動後もPFEが起動します。
+PFEを選んだ状態では、OS再起動後もPFEが起動します。ROCKNIXの起動処理が `090-ui_service` を初期値へ戻す場合に備えて、`/storage/.config/autostart/99-pfe-frontend` が保存済みの `frontend.conf` を起動時に再適用します。
 
 ## PFEからESへ戻る
 
@@ -293,11 +301,15 @@ tail -n 80 /roms/pfe/data/debug.log
 ```sh
 cat /storage/.config/pfe/frontend.conf
 cat /storage/.config/profile.d/090-ui_service
+tail -n 80 /storage/.config/pfe/frontend-autostart.log
+tail -n 80 /storage/.config/pfe/switch-to-pfe.log
 ```
 
-PFEを起動時のフロントエンドにしたい場合は、EmulationStationのPortsから `Switch_to_PFE.sh` を実行します。
+PFEを起動時のフロントエンドにしたい場合は、EmulationStationのPortsから `02_install_pfe.sh` を再実行してから `Switch_to_PFE.sh` を実行します。
 
 `Switch_to_PFE.sh` は `pfe.service` の起動確認に成功した場合だけ、起動対象をPFEへ保存します。PFEが起動できない場合はES側の選択状態を維持します。
+
+`pfe.service` がactiveなのに画面が黒い場合は、PyxelがWayland/EGLの準備前に起動して落ち続けている可能性があります。`02_install_pfe.sh` を再実行すると、SD2上のPFE本体待ちとWayland待ちを含む最新の `pfe.service` が再登録されます。
 
 ### OS起動直後の音量が大きい
 

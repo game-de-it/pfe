@@ -138,7 +138,7 @@ Release本文には、GitHub自動生成のSource codeではなく、AssetsのRO
 
 `02_install_pfe.sh` は、サービス登録前に `/roms/pfe/requirements.txt` を `/storage/.local` へインストールし、`pyxel`、`Pillow`、`pygame`、`pyxel-universal-font` のimport確認を行います。ここで失敗した場合は、サービス登録や切り替えへ進みません。
 
-`Switch_to_PFE.sh` は、`pfe.service` がactiveになったことを確認できた場合だけ、次回起動時のフロントエンドをPFEへ保存します。PFEが起動できない場合はEmulationStation側の選択状態を維持します。
+`Switch_to_PFE.sh` は、systemdの一時ジョブでEmulationStation停止後も切り替え処理を継続します。`pfe.service` がactiveで、`main.py` が数秒安定して動作していることを確認できた場合だけ、次回起動時のフロントエンドをPFEへ保存します。PFEが起動できない場合はEmulationStation側の選択状態を維持します。
 
 ## 復旧確認
 
@@ -148,6 +148,8 @@ Release本文には、GitHub自動生成のSource codeではなく、AssetsのRO
 tail -n 120 /storage/.config/rocknix-pyxel/install.log
 tail -n 120 /roms/pfe/data/debug.log
 systemctl status pfe.service --no-pager
+tail -n 120 /storage/.config/pfe/frontend-autostart.log
+tail -n 120 /storage/.config/pfe/switch-to-pfe.log
 ```
 
 フロントエンド選択を手動でEmulationStationへ戻す場合は、SSHから次を実行します。

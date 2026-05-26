@@ -28,6 +28,7 @@ MARKDOWN_FILES = (
     "docs/ROCKNIX_JP.md",
     "docs/releases/v1.0.0.md",
     "docs/releases/v1.0.1.md",
+    "docs/releases/v1.0.2.md",
     "tools/rocknix/README_JP.md",
 )
 
@@ -197,6 +198,14 @@ class Checker:
             for marker in ("configure_retroarch_menu", "menu_driver", '"rgui"'):
                 if marker not in text:
                     self.fail(f"{relative}: missing RetroArch menu readability marker: {marker}")
+            if "install_frontend_apply_service" in text:
+                self.fail(f"{relative}: stale boot frontend apply service installer remains")
+            for marker in ("cleanup_stale_frontend_apply_service", "pfe-frontend-apply.service", "apply_frontend.sh"):
+                if marker not in text:
+                    self.fail(f"{relative}: missing stale boot apply cleanup marker: {marker}")
+            for marker in ("RequiresMountsFor", "PFE_STORAGE_TIMEOUT", "PFE_WAYLAND_TIMEOUT", "WorkingDirectory=/storage"):
+                if marker not in text:
+                    self.fail(f"{relative}: missing boot PFE storage/readiness marker: {marker}")
 
         switchers = (
             "tools/rocknix/ports/Switch_to_PFE.sh",
@@ -204,9 +213,12 @@ class Checker:
         )
         for relative in switchers:
             text = (ROOT / relative).read_text(encoding="utf-8")
-            for marker in ("verify_pfe_service", "systemctl is-active --quiet"):
+            for marker in ("install_switch_worker", "switch_to_pfe_worker.sh", "systemd-run"):
                 if marker not in text:
                     self.fail(f"{relative}: missing PFE switch safety marker: {marker}")
+            for marker in ("pfe_runtime_ready", "PFE_READY_SECONDS", "PFE_NO_RESTART_FILE", "fallback_to_es"):
+                if marker not in text:
+                    self.fail(f"{relative}: missing PFE switch readiness marker: {marker}")
 
     def check_release_file_list(self) -> None:
         sys.path.insert(0, str(ROOT / "tools"))

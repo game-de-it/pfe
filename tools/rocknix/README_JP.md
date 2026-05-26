@@ -151,8 +151,10 @@ PFEを起動時のフロントエンドにしたい場合:
 ./02_install_pfe.sh --enable
 ```
 
-ROCKNIXの起動対象は `/storage/.config/profile.d/090-ui_service` の `UI_SERVICE` で管理されます。ただし標準の起動処理がこのファイルを毎回初期値に戻すため、PFEの切り替えスクリプトは `/storage/.config/pfe/frontend.conf` に選択状態を保存し、`/storage/.config/autostart/99-pfe-frontend` で起動時に再適用します。
+ROCKNIXの起動対象は `/storage/.config/profile.d/090-ui_service` の `UI_SERVICE` で管理されます。ただし標準の起動処理がこのファイルを毎回初期値に戻す場合があるため、PFEの切り替えスクリプトは `/storage/.config/pfe/frontend.conf` に選択状態を保存します。`02_install_pfe.sh` は `/storage/.config/autostart/99-pfe-frontend` を配置し、ROCKNIXがUIサービスを起動する直前に保存済みのフロントエンドを再適用します。
 
-`Switch_to_PFE.sh` は、`pfe.service` が起動してactiveになることを確認できた場合だけ、選択状態を `sway.service pfe.service` に保存します。PFEが起動できない場合は保存せずに停止するため、ESへ戻れない状態を避けます。PFE側の `Settings > Quit > Switch to ES` は `sway.service essway.service` に更新します。つまり、最後に正常に切り替えたフロントエンドが次回のOS起動時にも選ばれます。
+`Switch_to_PFE.sh` は、systemdの一時ジョブとして切り替え処理を動かします。これにより、ESが停止しても切り替え処理は継続します。`pfe.service` がactiveで、`main.py` が数秒安定して動作することを確認できた場合だけ、選択状態を `sway.service pfe.service` に保存します。PFEが起動できない場合はEmulationStationへ戻し、ES側の選択状態を維持します。PFE側の `Settings > Quit > Switch to ES` は `sway.service essway.service` に更新します。つまり、最後に正常に切り替えたフロントエンドが次回のOS起動時にも選ばれます。
+
+`/roms/pfe` がSD2上にある場合に備えて、`pfe.service` は `/storage/roms` とPFE本体ファイルを待ってから起動します。起動状態の確認には `/storage/.config/pfe/frontend-autostart.log` と `/storage/.config/pfe/switch-to-pfe.log` も利用できます。
 
 PFE側からESへ戻る場合は、PFEの `Settings > Quit > Switch to ES` を使います。この項目はPFE同梱の `scripts/switch_to_es.sh` を呼び出し、PFEの自動再起動を止めてから `essway.service` を起動します。

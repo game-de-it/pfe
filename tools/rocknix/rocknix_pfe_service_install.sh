@@ -46,17 +46,48 @@ install_frontend_autostart() {
         printf '%s\n' '#!/bin/sh'
         printf '%s\n' 'STATE_FILE="${PFE_FRONTEND_STATE_FILE:-/storage/.config/pfe/frontend.conf}"'
         printf '%s\n' 'UI_SERVICE_FILE="${PFE_UI_SERVICE_FILE:-/storage/.config/profile.d/090-ui_service}"'
+        printf '%s\n' 'LOG_FILE="${PFE_FRONTEND_AUTOSTART_LOG:-/storage/.config/pfe/frontend-autostart.log}"'
         printf '%s\n' ''
-        printf '%s\n' '[ -r "$STATE_FILE" ] || exit 0'
-        printf '%s\n' 'IFS= read -r service_list < "$STATE_FILE" || exit 0'
+        printf '%s\n' 'log_message() {'
+        printf '%s\n' '    log_dir=$(dirname "$LOG_FILE")'
+        printf '%s\n' '    mkdir -p "$log_dir" 2>/dev/null || true'
+        printf '%s\n' '    printf '\''%s %s\n'\'' "$(date '\''+%Y-%m-%d %H:%M:%S'\'')" "$*" >> "$LOG_FILE" 2>/dev/null || true'
+        printf '%s\n' '}'
+        printf '%s\n' ''
+        printf '%s\n' '[ -r "$STATE_FILE" ] || { log_message "state file missing: $STATE_FILE"; exit 0; }'
+        printf '%s\n' 'IFS= read -r service_list < "$STATE_FILE" || { log_message "state file unreadable: $STATE_FILE"; exit 0; }'
         printf '%s\n' 'case "$service_list" in'
         printf '%s\n' '    *service*) ;;'
-        printf '%s\n' '    *) exit 0 ;;'
+        printf '%s\n' '    *) log_message "ignored invalid frontend state: $service_list"; exit 0 ;;'
         printf '%s\n' 'esac'
-        printf '%s\n' 'mkdir -p "$(dirname "$UI_SERVICE_FILE")" 2>/dev/null || exit 0'
-        printf '%s\n' 'printf '\''UI_SERVICE="%s"\n'\'' "$service_list" > "$UI_SERVICE_FILE" 2>/dev/null || true'
+        printf '%s\n' 'mkdir -p "$(dirname "$UI_SERVICE_FILE")" 2>/dev/null || { log_message "failed to create UI service directory"; exit 0; }'
+        printf '%s\n' 'if printf '\''UI_SERVICE="%s"\n'\'' "$service_list" > "$UI_SERVICE_FILE" 2>/dev/null; then'
+        printf '%s\n' '    log_message "applied frontend: $service_list"'
+        printf '%s\n' 'else'
+        printf '%s\n' '    log_message "failed to write UI service file: $UI_SERVICE_FILE"'
+        printf '%s\n' 'fi'
     } > "$FRONTEND_AUTOSTART_SCRIPT" 2>/dev/null || return 0
     chmod +x "$FRONTEND_AUTOSTART_SCRIPT" 2>/dev/null || true
+}
+
+cleanup_stale_frontend_apply_service() {
+    stale_service="${PFE_FRONTEND_APPLY_SERVICE:-pfe-frontend-apply.service}"
+    stale_script="${PFE_FRONTEND_APPLY_SCRIPT:-/storage/.config/pfe/apply_frontend.sh}"
+    stale_unit="$UNIT_DIR/$stale_service"
+
+    systemctl disable "$stale_service" >/dev/null 2>&1 || true
+    rm -f "$UNIT_DIR/rocknix.target.wants/$stale_service" "$stale_unit" "$stale_script" 2>/dev/null || true
+}
+
+pfe_requires_mounts_for() {
+    case "$PFE_DIR" in
+        /roms/*|/storage/roms/*)
+            printf '%s /storage/roms\n' "$PFE_DIR"
+            ;;
+        *)
+            printf '%s\n' "$PFE_DIR"
+            ;;
+    esac
 }
 
 set_boot_frontend() {
@@ -311,11 +342,14 @@ configure_retroarch_screenshots
 configure_retroarch_menu
 
 mkdir -p "$UNIT_DIR"
+cleanup_stale_frontend_apply_service
+PFE_REQUIRES_MOUNTS_FOR=$(pfe_requires_mounts_for)
 
 cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=PFE Frontend
 Requires=sway.service
+RequiresMountsFor=$PFE_REQUIRES_MOUNTS_FOR
 After=sway.service
 Conflicts=essway.service
 
@@ -336,7 +370,9 @@ Environment=PFE_NO_RESTART_FILE=/tmp/pfe-no-restart
 Environment=PFE_FIX_PERMISSIONS=auto
 EnvironmentFile=-/etc/profile
 EnvironmentFile=-/storage/.config/pfe/pfe.env
-WorkingDirectory=$PFE_DIR
+WorkingDirectory=/storage
+ExecStartPre=/bin/sh -c 'count=0; while [ "\$count" -lt "\${PFE_STORAGE_TIMEOUT:-30}" ]; do [ -r "\${PFE_APP_DIR:-/roms/pfe}/launcher.sh" ] && [ -r "\${PFE_APP_DIR:-/roms/pfe}/main.py" ] && exit 0; sleep 1; count=\$((count + 1)); done; echo "Timed out waiting for PFE files: \${PFE_APP_DIR:-/roms/pfe}" >&2; exit 1'
+ExecStartPre=/bin/sh -c 'count=0; while [ "\$count" -lt "\${PFE_WAYLAND_TIMEOUT:-30}" ]; do [ -S "\${XDG_RUNTIME_DIR:-/var/run/0-runtime-dir}/\${WAYLAND_DISPLAY:-wayland-1}" ] && exit 0; sleep 1; count=\$((count + 1)); done; echo "Timed out waiting for Wayland display" >&2; exit 1'
 ExecStart=/bin/bash $PFE_DIR/launcher.sh
 Restart=on-failure
 RestartSec=2
