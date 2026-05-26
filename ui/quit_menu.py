@@ -9,9 +9,9 @@ import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText
 from ui.window import DQWindow
-from japanese_text import draw_japanese_text
-from theme_manager import get_theme_manager
-from debug import debug_print
+from pfe_app.japanese_text import draw_japanese_text
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.debug import debug_print
 
 
 class QuitMenu(ScrollableList):
@@ -39,9 +39,14 @@ class QuitMenu(ScrollableList):
             'RESTART_PFE_SCRIPT',
             os.path.join(self.scripts_dir, "restart_pfe.sh")
         )
+        self.switch_to_es_script = config.global_vars.get(
+            'SWITCH_TO_ES_SCRIPT',
+            os.path.join(self.scripts_dir, "switch_to_es.sh")
+        )
 
         # Menu items
         self.menu_items = [
+            {"name": "Switch to ES", "key": "switch_to_es", "description": "Start EmulationStation"},
             {"name": "Restart PFE", "key": "restart_pfe", "description": "Restart PFE launcher"},
             {"name": "Reboot", "key": "reboot", "description": "Restart the system"},
             {"name": "Shutdown", "key": "shutdown", "description": "Power off the system"},
@@ -114,6 +119,14 @@ class QuitMenu(ScrollableList):
         import pyxel
         pyxel.quit()
 
+    def _do_switch_to_es(self):
+        """Switch from PFE to EmulationStation."""
+        debug_print("[QuitMenu] Switching to EmulationStation...")
+        if self._execute_script(self.switch_to_es_script):
+            pyxel.cls(0)
+            pyxel.flip()
+            pyxel.quit()
+
     def _do_reboot(self):
         """Execute system reboot using external script."""
         debug_print("[QuitMenu] Initiating reboot...")
@@ -129,13 +142,15 @@ class QuitMenu(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         if self.confirming:
             # Confirmation mode
             if self.input_handler.is_pressed(Action.A):
                 # Execute the action
-                if self.confirm_action == "restart_pfe":
+                if self.confirm_action == "switch_to_es":
+                    self._do_switch_to_es()
+                elif self.confirm_action == "restart_pfe":
                     self._do_restart_pfe()
                 elif self.confirm_action == "reboot":
                     self._do_reboot()
@@ -196,7 +211,9 @@ class QuitMenu(ScrollableList):
             dialog_x = center_x - dialog_width // 2
             DQWindow.draw(dialog_x, 50, dialog_width, 50, bg_color=bg_color, border_color=warning_color)
 
-            if self.confirm_action == "restart_pfe":
+            if self.confirm_action == "switch_to_es":
+                action_name = "Switch to ES"
+            elif self.confirm_action == "restart_pfe":
                 action_name = "Restart PFE"
             elif self.confirm_action == "reboot":
                 action_name = "Reboot"
@@ -212,7 +229,7 @@ class QuitMenu(ScrollableList):
         else:
             # Draw menu window
             window_width = pyxel.width - 8
-            DQWindow.draw(2, 18, window_width, 60, bg_color=bg_color, border_color=border_color)
+            DQWindow.draw(2, 18, window_width, 80, bg_color=bg_color, border_color=border_color)
 
             # Draw menu items
             start_y = 30

@@ -2,16 +2,14 @@
 Main menu screen for category selection.
 """
 
-import os
 import pyxel
-from PIL import Image
 from ui.base import ScrollableList, draw_box
 from ui.components import StatusBar, HelpText, Icon, SystemStatus
 from ui.window import DQWindow
-from typing import List, Dict
-from config import Category
-from japanese_text import draw_japanese_text, get_japanese_text_width
-from theme_manager import get_theme_manager
+from pfe_app.config import Category
+from pfe_app.japanese_text import draw_japanese_text, get_japanese_text_width
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.image_cache import ImageCache
 
 
 class MainMenu(ScrollableList):
@@ -33,46 +31,13 @@ class MainMenu(ScrollableList):
         self.gallery_rows = 3  # 縦方向のセル数
         self.gallery_cell_size = 32  # 各セルのサイズ
         self.gallery_page_offset = 0  # ページオフセット（ページ単位でスクロール）
+        self._update_gallery_layout()
 
-        # 画像キャッシュ
-        self.image_cache: Dict[str, bool] = {}  # パス -> ロード済みフラグ
-        self.image_bank = 0  # イメージバンク0を使用（Pyxelは0,1,2の3つのみ）
-        self.image_cache_positions: Dict[str, tuple] = {}  # パス -> (x, y) イメージバンク内の位置
-        self._init_color_lookup_table()
+        # 画像キャッシュ（PVNM方式: 256色パレット化してpyxel.Imageへ一括転送）
+        self.image_cache = ImageCache(memory_limit=128)
 
         # Load categories from config
         self._load_categories()
-
-    def _init_color_lookup_table(self):
-        """RGB→Pyxelカラー変換用LUTを初期化"""
-        palette = [
-            (0, 0, 0), (43, 51, 95), (126, 32, 114), (25, 149, 156),
-            (139, 72, 82), (57, 92, 152), (169, 193, 255), (238, 238, 238),
-            (212, 24, 108), (211, 132, 65), (233, 195, 91), (112, 198, 169),
-            (118, 150, 222), (163, 163, 163), (255, 151, 152), (237, 199, 176),
-        ]
-        self.color_lut = {}
-        for r5 in range(32):
-            for g5 in range(32):
-                for b5 in range(32):
-                    r = (r5 * 255) // 31
-                    g = (g5 * 255) // 31
-                    b = (b5 * 255) // 31
-                    min_distance = float('inf')
-                    nearest_color = 0
-                    for i, (pr, pg, pb) in enumerate(palette):
-                        distance = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
-                        if distance < min_distance:
-                            min_distance = distance
-                            nearest_color = i
-                    self.color_lut[(r5, g5, b5)] = nearest_color
-
-    def _rgb_to_pyxel_color(self, r: int, g: int, b: int) -> int:
-        """RGBをPyxelカラーに変換"""
-        r5 = (r * 31) // 255
-        g5 = (g * 31) // 255
-        b5 = (b * 31) // 255
-        return self.color_lut.get((r5, g5, b5), 0)
 
     def _load_view_mode(self) -> str:
         """settings.jsonからview_modeを読み込み"""
@@ -92,6 +57,11 @@ class MainMenu(ScrollableList):
         """Load categories from config."""
         categories = self.config.get_categories()
         self.set_items(categories)
+
+    def _update_gallery_layout(self):
+        """Use a wider grid when the 4:3 layout gives us room."""
+        self.gallery_cols = 5 if pyxel.width >= 200 else 3
+        self.gallery_rows = 3
 
     def _update_help_text(self):
         """ヘルプテキストを更新（view_modeに応じて）"""
@@ -119,6 +89,7 @@ class MainMenu(ScrollableList):
 
         # view_modeを復元（settings.jsonから）
         self.view_mode = self._load_view_mode()
+        self._update_gallery_layout()
 
         self._update_help_text()
         # ギャラリー用画像をプリロード
@@ -131,12 +102,13 @@ class MainMenu(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # View mode toggle (X button)
         if self.input_handler.is_pressed(Action.X):
             if self.view_mode == "list":
                 self.view_mode = "gallery"
+                self._update_gallery_layout()
                 self._preload_gallery_images()
                 # ギャラリー用にページオフセットを計算
                 self._update_gallery_page()
@@ -149,7 +121,7 @@ class MainMenu(ScrollableList):
 
         # Favorites (R button)
         if self.input_handler.is_pressed(Action.R):
-            from state_manager import AppState
+            from pfe_app.state_manager import AppState
             self.state_manager.change_state(AppState.FAVORITES)
             return
 
@@ -176,18 +148,21 @@ class MainMenu(ScrollableList):
         if self.input_handler.is_pressed(Action.A):
             selected = self.get_selected_item()
             if selected:
-                from state_manager import AppState
+                from pfe_app.state_manager import AppState
                 self.state_manager.set_selected_category(selected.name)
                 self.state_manager.change_state(AppState.FILE_LIST)
 
         # Recent
         if self.input_handler.is_pressed(Action.Y):
-            from state_manager import AppState
+            from pfe_app.state_manager import AppState
             self.state_manager.change_state(AppState.RECENT)
 
         # Settings
         if self.input_handler.is_pressed(Action.SELECT):
-            from state_manager import AppState
+            from pfe_app.state_manager import AppState
+            selected = self.get_selected_item()
+            if selected:
+                self.state_manager.set_selected_category(selected.name)
             self.state_manager.change_state(AppState.SETTINGS)
 
         # TOPメニューではBボタンを無効化（終了させない）
@@ -196,7 +171,7 @@ class MainMenu(ScrollableList):
 
     def _update_gallery_navigation(self):
         """ギャラリーモードのナビゲーション処理（行優先：右→右、下→下）"""
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         if not self.items:
             return
@@ -295,10 +270,6 @@ class MainMenu(ScrollableList):
         # Clear screen
         pyxel.cls(bg_color)
 
-        # Draw title (上部1行目、左詰めでシステムステータスと重ならないように)
-        title = "ROM LAUNCHER"
-        pyxel.text(2, 2, title, text_selected_color)
-
         # Draw system status (右上)
         self.system_status.draw()
 
@@ -308,6 +279,7 @@ class MainMenu(ScrollableList):
         pyxel.text(subtitle_x, 10, subtitle, text_color)
 
         if self.view_mode == "gallery":
+            self._update_gallery_layout()
             self._draw_gallery_view()
         else:
             self._draw_list_view()
@@ -321,31 +293,11 @@ class MainMenu(ScrollableList):
             # ステータスバーの背景を描画
             self.status_bar.set_text(
                 left="",
-                center="",
-                right=f"{self.selected_index + 1}/{len(self.items)}"
+                center=category_name,
+                right=f"{self.selected_index + 1}/{len(self.items)}",
+                center_highlight=True,
             )
             self.status_bar.draw()
-
-            # カテゴリ名を日本語対応で中央に描画
-            if category_name:
-                # 長すぎる場合は切り詰め
-                max_width = pyxel.width - 80
-                try:
-                    while get_japanese_text_width(category_name) > max_width and len(category_name) > 0:
-                        category_name = category_name[:-1]
-                    if get_japanese_text_width(category_name) > max_width:
-                        category_name = category_name[:-2] + ".."
-                except:
-                    if len(category_name) > 20:
-                        category_name = category_name[:18] + ".."
-
-                # 中央揃えで描画
-                try:
-                    name_width = get_japanese_text_width(category_name)
-                except:
-                    name_width = len(category_name) * 4
-                name_x = (pyxel.width - name_width) // 2
-                draw_japanese_text(name_x, 139, category_name, text_selected_color)
         else:
             self.status_bar.set_text(
                 left=f"Categories: {len(self.items)}",
@@ -413,6 +365,7 @@ class MainMenu(ScrollableList):
         text_color = theme.get_color("text")
         text_selected_color = theme.get_color("text_selected")
         border_color = theme.get_color("border")
+        cursor_color = theme.get_color("gallery_cursor")
 
         if not self.items:
             # Empty state
@@ -457,8 +410,8 @@ class MainMenu(ScrollableList):
                 # セル背景
                 if is_selected:
                     # 選択枠を描画
-                    pyxel.rectb(cell_x - 1, cell_y - 1, cell_size + 2, cell_size + 2, text_selected_color)
-                    pyxel.rectb(cell_x - 2, cell_y - 2, cell_size + 4, cell_size + 4, text_selected_color)
+                    pyxel.rectb(cell_x - 1, cell_y - 1, cell_size + 2, cell_size + 2, cursor_color)
+                    pyxel.rectb(cell_x - 2, cell_y - 2, cell_size + 4, cell_size + 4, cursor_color)
 
                 # 画像またはプレースホルダーを描画
                 self._draw_gallery_cell(category, cell_x, cell_y, cell_size, is_selected)
@@ -479,120 +432,54 @@ class MainMenu(ScrollableList):
         border_color = theme.get_color("border")
 
         # 画像がある場合は画像を表示
-        if category.title_img and self._is_image_loaded(category.title_img):
-            self._draw_cached_image(category.title_img, x, y, size)
-        else:
-            # 画像がない場合はプレースホルダー（グレーの四角）
-            pyxel.rect(x, y, size, size, 5)  # グレー背景
-            pyxel.rectb(x, y, size, size, border_color)  # 枠線
+        if category.title_img and self._draw_cached_image(category.title_img, x, y, size):
+            return
 
-            # 「?」マークを中央に表示
-            mark = "?"
-            mark_x = x + (size - 4) // 2
-            mark_y = y + (size - 6) // 2
-            pyxel.text(mark_x, mark_y, mark, text_color)
+        # 画像がない場合はプレースホルダー（グレーの四角）
+        pyxel.rect(x, y, size, size, 5)  # グレー背景
+        pyxel.rectb(x, y, size, size, border_color)  # 枠線
+
+        # 「?」マークを中央に表示
+        mark = "?"
+        mark_x = x + (size - 4) // 2
+        mark_y = y + (size - 6) // 2
+        pyxel.text(mark_x, mark_y, mark, text_color)
 
     def _preload_gallery_images(self):
         """ギャラリー用の画像をプリロード"""
-        from debug import debug_print
+        from pfe_app.debug import debug_print
 
         if not self.items:
             return
 
-        # 各カテゴリの画像をロード
-        cache_x = 0
-        cache_y = 0
         cell_size = self.gallery_cell_size
 
         for category in self.items:
             if not category.title_img:
                 continue
 
-            if category.title_img in self.image_cache:
-                continue
-
             debug_print(f"[MainMenu] Loading image: {category.title_img}")
-
-            # 画像をロード
-            if self._load_image_to_cache(category.title_img, cache_x, cache_y, cell_size):
-                self.image_cache_positions[category.title_img] = (cache_x, cache_y)
-                self.image_cache[category.title_img] = True
-                debug_print(f"[MainMenu] Image loaded at ({cache_x}, {cache_y})")
-
-                # 次のキャッシュ位置
-                cache_x += cell_size
-                if cache_x + cell_size > 256:  # イメージバンクの幅
-                    cache_x = 0
-                    cache_y += cell_size
-                    if cache_y + cell_size > 256:  # イメージバンクの高さ
-                        debug_print("[MainMenu] Image cache full")
-                        break  # キャッシュがいっぱい
-            else:
+            if not self.image_cache.get_fit(category.title_img, cell_size, cell_size, upscale=True):
                 debug_print(f"[MainMenu] Failed to load image: {category.title_img}")
 
-    def _load_image_to_cache(self, img_path: str, cache_x: int, cache_y: int, size: int) -> bool:
-        """画像をイメージバンクにロード"""
-        from debug import debug_print
+    def _is_image_loaded(self, img_path: str) -> bool:
+        """画像がキャッシュにロード可能か確認"""
+        return self.image_cache.get_fit(img_path, self.gallery_cell_size, self.gallery_cell_size, upscale=True) is not None
+
+    def _draw_cached_image(self, img_path: str, x: int, y: int, size: int) -> bool:
+        """キャッシュされた画像を描画"""
+        from pfe_app.debug import debug_print
 
         try:
-            # パスの正規化（相対パス対応）
-            if not os.path.isabs(img_path):
-                # 相対パスの場合、現在の作業ディレクトリからの相対パスとして扱う
-                full_path = os.path.abspath(img_path)
-            else:
-                full_path = img_path
-
-            debug_print(f"[MainMenu] Checking path: {full_path}")
-
-            if not os.path.exists(full_path):
-                debug_print(f"[MainMenu] File not found: {full_path}")
+            image = self.image_cache.get_fit(img_path, size, size, upscale=True)
+            if image is None:
                 return False
-
-            img = Image.open(full_path)
-            orig_width, orig_height = img.size
-
-            # アスペクト比を維持してフィット
-            scale = min(size / orig_width, size / orig_height)
-            new_width = int(orig_width * scale)
-            new_height = int(orig_height * scale)
-
-            img = img.resize((new_width, new_height), Image.Resampling.BILINEAR)
-            img = img.convert('RGB')
-            pixels = img.load()
-
-            # オフセット（中央配置）
-            offset_x = (size - new_width) // 2
-            offset_y = (size - new_height) // 2
-
-            # Pyxelイメージバンクに書き込み
-            pyxel_img = pyxel.image(self.image_bank)
-
-            # まず背景をクリア（透明色として0を使用）
-            for py in range(size):
-                for px in range(size):
-                    pyxel_img.pset(cache_x + px, cache_y + py, 0)
-
-            # 画像を書き込み
-            for py in range(new_height):
-                for px in range(new_width):
-                    r, g, b = pixels[px, py]
-                    color = self._rgb_to_pyxel_color(r, g, b)
-                    pyxel_img.pset(cache_x + offset_x + px, cache_y + offset_y + py, color)
-
+            theme = get_theme_manager()
+            pyxel.rect(x, y, size, size, theme.get_color("background"))
+            draw_x = x + (size - image.width) // 2
+            draw_y = y + (size - image.height) // 2
+            pyxel.blt(draw_x, draw_y, image.image, 0, 0, image.width, image.height)
             return True
         except Exception as e:
-            debug_print(f"[MainMenu] Error loading image: {e}")
+            debug_print(f"[MainMenu] Error drawing image: {e}")
             return False
-
-    def _is_image_loaded(self, img_path: str) -> bool:
-        """画像がキャッシュにロード済みか確認"""
-        return img_path in self.image_cache and self.image_cache[img_path]
-
-    def _draw_cached_image(self, img_path: str, x: int, y: int, size: int):
-        """キャッシュされた画像を描画"""
-        if img_path not in self.image_cache_positions:
-            return
-
-        cache_x, cache_y = self.image_cache_positions[img_path]
-        # 透明色を指定しない（-1は無効な値として扱われ透明処理をスキップ）
-        pyxel.blt(x, y, self.image_bank, cache_x, cache_y, size, size)

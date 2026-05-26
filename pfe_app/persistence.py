@@ -356,7 +356,6 @@ class PersistenceManager:
                 "settings": {
                     "show_screenshots": "On",
                     "sort_mode": "Name",
-                    "button_layout": "Nintendo",
                     "auto_launch": "Off",
                     "wifi_enabled": False,
                     "wifi_ssid": "",

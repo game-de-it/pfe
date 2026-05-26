@@ -34,6 +34,7 @@ class ThemeManager:
                 "text_selected": 10,  # Yellow
                 "border": 7,          # White
                 "border_accent": 11,  # Light blue
+                "gallery_cursor": 9,  # Orange
                 "scrollbar": 11,      # Light blue
                 "status_bg": 1,       # Dark blue
                 "help_bg": 1,         # Dark blue
@@ -52,6 +53,7 @@ class ThemeManager:
                 "text_selected": 8,   # Red
                 "border": 0,          # Black
                 "border_accent": 12,  # Blue
+                "gallery_cursor": 8,  # Red
                 "scrollbar": 12,      # Blue
                 "status_bg": 13,      # Light gray
                 "help_bg": 13,        # Light gray
@@ -70,6 +72,7 @@ class ThemeManager:
                 "text_selected": 10,  # Yellow
                 "border": 11,         # Light green
                 "border_accent": 10,  # Yellow
+                "gallery_cursor": 9,  # Orange
                 "scrollbar": 10,      # Yellow
                 "status_bg": 4,       # Dark purple
                 "help_bg": 4,         # Dark purple
@@ -88,6 +91,7 @@ class ThemeManager:
                 "text_selected": 6,   # Cyan
                 "border": 14,         # Pink
                 "border_accent": 6,   # Cyan
+                "gallery_cursor": 8,  # Red
                 "scrollbar": 6,       # Cyan
                 "status_bg": 1,       # Dark blue
                 "help_bg": 1,         # Dark blue
@@ -152,6 +156,16 @@ class ThemeManager:
         Returns:
             Pyxel color index (0-15)
         """
+        if color_key == "gallery_cursor":
+            warm_cursor_colors = (8, 9)
+            color = self.colors.get("gallery_cursor")
+            if color in warm_cursor_colors:
+                return color
+            for fallback_key in ("border_accent", "text_selected", "scrollbar", "info"):
+                fallback = self.colors.get(fallback_key)
+                if fallback in warm_cursor_colors:
+                    return fallback
+            return 9
         return self.colors.get(color_key, 7)  # Default to white
 
     def get_theme_names(self) -> list:

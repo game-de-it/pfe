@@ -7,10 +7,10 @@ from datetime import datetime
 from ui.base import UIScreen
 from ui.components import HelpText
 from ui.window import DQWindow
-from japanese_text import draw_japanese_text, get_japanese_text_width
-from theme_manager import get_theme_manager
-from system_monitor import get_system_monitor
-from debug import debug_print
+from pfe_app.japanese_text import draw_japanese_text, get_japanese_text_width
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.system_monitor import get_system_monitor
+from pfe_app.debug import debug_print
 
 
 class DateTimeSettings(UIScreen):
@@ -151,7 +151,7 @@ class DateTimeSettings(UIScreen):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Update message timer
         if self.message_timer > 0:

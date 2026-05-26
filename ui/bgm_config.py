@@ -6,13 +6,13 @@ import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText
 from ui.window import DQWindow
-from japanese_text import draw_japanese_text, get_japanese_text_width
-from theme_manager import get_theme_manager
-from debug import debug_print
-from bgm_manager import get_bgm_manager
-from music_mode import get_music_mode_manager
-from brightness_manager import get_brightness_manager
-from system_monitor import get_system_monitor
+from pfe_app.japanese_text import draw_japanese_text, get_japanese_text_width
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.debug import debug_print
+from pfe_app.bgm_manager import get_bgm_manager
+from pfe_app.music_mode import get_music_mode_manager
+from pfe_app.brightness_manager import get_brightness_manager
+from pfe_app.system_monitor import get_system_monitor
 
 
 class BGMConfig(ScrollableList):
@@ -46,6 +46,11 @@ class BGMConfig(ScrollableList):
         except:
             bgm_volume = 5
 
+        # BGM Driver
+        bgm_driver_values = ["pyxel", "pygame"]
+        bgm_driver_str = settings.get("bgm_driver", "pygame")
+        bgm_driver_index = bgm_driver_values.index(bgm_driver_str) if bgm_driver_str in bgm_driver_values else 1
+
         # BGM Mode
         bgm_mode_values = ["Normal", "Shuffle"]
         bgm_mode_str = settings.get("bgm_mode", "Normal")
@@ -54,6 +59,7 @@ class BGMConfig(ScrollableList):
         # Menu items
         self.menu_items = [
             {"name": "BGM", "type": "toggle", "key": "bgm_enabled", "values": ["Off", "On"], "current": bgm_enabled},
+            {"name": "BGM Driver", "type": "toggle", "key": "bgm_driver", "values": bgm_driver_values, "current": bgm_driver_index},
             {"name": "BGM Volume", "type": "toggle", "key": "bgm_volume", "values": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"], "current": bgm_volume},
             {"name": "BGM Mode", "type": "toggle", "key": "bgm_mode", "values": bgm_mode_values, "current": bgm_mode_index},
             {"name": "Music Mode", "type": "toggle", "key": "music_mode", "values": ["Off", "On"], "current": 0},
@@ -78,6 +84,10 @@ class BGMConfig(ScrollableList):
                     item["current"] = int(bgm_volume_str)
                 except:
                     item["current"] = 5
+            elif item["key"] == "bgm_driver":
+                bgm_driver_str = settings.get("bgm_driver", "pygame")
+                if bgm_driver_str in item["values"]:
+                    item["current"] = item["values"].index(bgm_driver_str)
             elif item["key"] == "bgm_mode":
                 bgm_mode_str = settings.get("bgm_mode", "Normal")
                 if bgm_mode_str in item["values"]:
@@ -89,6 +99,7 @@ class BGMConfig(ScrollableList):
         # Set help text
         self.help_text.set_controls([
             ("Left/Right", "Change"),
+            ("L/R", "Prev/Next"),
             ("B", "Back")
         ])
 
@@ -147,7 +158,7 @@ class BGMConfig(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Check for Music Mode exit combo (X + Y)
         if self.music_mode_manager.is_active():
@@ -179,6 +190,12 @@ class BGMConfig(ScrollableList):
             if changed and selected["key"] != "music_mode":
                 self._save_settings()
 
+        # Prev/Next track
+        if self.input_handler.is_pressed(Action.L):
+            self.bgm_manager.play_prev()
+        elif self.input_handler.is_pressed(Action.R):
+            self.bgm_manager.play_next()
+
         # Back
         if self.input_handler.is_pressed(Action.B):
             self.state_manager.go_back()
@@ -193,6 +210,10 @@ class BGMConfig(ScrollableList):
             debug_print(f"BGM setting changed to: {enabled}")
             self.bgm_manager.set_enabled(enabled)
             debug_print(f"BGM is now playing: {self.bgm_manager.is_bgm_playing()}")
+
+        elif key == "bgm_driver":
+            debug_print(f"BGM driver changed to: {value}")
+            self.bgm_manager.set_driver(value)
 
         elif key == "bgm_volume":
             volume_level = int(value)

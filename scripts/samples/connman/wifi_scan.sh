@@ -7,13 +7,15 @@
 # - systemctl enable --now connman
 #
 
+WIFI_SCAN_WAIT_SECONDS="${WIFI_SCAN_WAIT_SECONDS:-6}"
+
 # Enable WiFi if not enabled
-connmanctl enable wifi 2>/dev/null
+connmanctl enable wifi >/dev/null 2>&1
 sleep 1
 
 # Trigger scan
-connmanctl scan wifi 2>/dev/null
-sleep 3
+connmanctl scan wifi >/dev/null 2>&1
+sleep "$WIFI_SCAN_WAIT_SECONDS"
 
 # Get services and extract WiFi SSIDs
 # connmanctl services format: *AO Name                wifi_xxx_managed_psk

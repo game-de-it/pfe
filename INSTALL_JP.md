@@ -1,313 +1,288 @@
 # インストール手順
 
+この文書は、通常のLinux/PC環境でPFEを導入するための手順です。
+
+ROCKNIXで導入する場合は、この汎用手順ではなく [ROCKNIX導入ガイド](docs/ROCKNIX_JP.md) を参照してください。ROCKNIXでは `tools/rocknix/ports/` を `/roms/ports/` にコピーし、EmulationStationのPortsから実行する前提で説明しています。
+
 ## 必要なもの
 
 - Python 3.8以降
 - pip
-- RetroArch（またはPPSSPP等のエミュレータ）
+- RetroArch、PPSSPPなど利用したいエミュレータ
+- ROMファイル
 
-## 手順
+## 1. 依存関係のインストール
 
-### 1. 依存関係のインストール
+推奨:
 
 ```bash
-pip install -r requirements.txt
+./scripts/install_deps.sh
 ```
 
-または個別にインストール:
+別のPythonを使う場合:
 
 ```bash
-pip install pyxel>=2.2.7
+PFE_PYTHON=/path/to/python3 ./scripts/install_deps.sh
+```
+
+手動で入れる場合:
+
+```bash
+pip install "pyxel>=2.9.5"
 pip install Pillow>=10.0.0
 pip install pyxel-universal-font>=0.2.0
-pip install pygame>=2.0.0  # BGM再生用
+pip install pygame>=2.0.0
 ```
 
-### 2. 設定ファイルの準備
+`scripts/install_deps.sh` はROCKNIX/plumOS系のPythonで起きるpipのbytecode問題も避けるため、通常環境でもこのスクリプト経由を推奨します。
 
-サンプル設定ファイルをコピー:
+## 2. 設定ファイルの準備
+
+サンプルをコピーします。
 
 ```bash
 cp data/pfe.cfg.example data/pfe.cfg
 ```
 
-`data/pfe.cfg` を編集してROMディレクトリとエミュレータパスを設定:
+最低限、ROMの場所とエミュレータ起動スクリプトを確認します。
 
 ```ini
-; グローバル設定
 ROM_BASE=/path/to/your/roms
 
-; エミュレータ設定
-; TYPE_RA: RetroArchランチャースクリプト（<core_filename> <rom_path>を受け取る）
 TYPE_RA=./bin/retroarch.sh
 
-; TYPE_SA_*: スタンドアローンエミュレータ（<rom_path>のみ受け取る）
-;TYPE_SA_PPSSPP=/usr/local/bin/ppsspp.sh
+; 必要に応じてスタンドアロンエミュレータを指定
+;TYPE_SA_PPSSPP=./bin/ppsspp.sh
+;TYPE_SA_YABASANSHIRO=./bin/yabasanshiro.sh
+```
 
-; デバッグ（問題がある場合はtrueに）
-DEBUG=false
+カテゴリは `-TITLE`、`-DIR`、`-EXT`、`-CORE` で定義します。
 
-; カテゴリ定義
+```ini
 -TITLE=ファミコン
 -DIR=nes
 -EXT=nes,fds
 -CORE=nestopia,fceumm
 
--TITLE=スーファミ
--DIR=snes
--EXT=sfc,smc
--CORE=snes9x
-
-; スタンドアローンエミュレータの例
-;-TITLE=PSP
-;-DIR=psp
-;-EXT=iso,cso,pbp
-;-CORE=SA:PPSSPP
+-TITLE=PSP
+-DIR=psp
+-EXT=iso,cso,pbp
+-CORE=SA:PPSSPP
 ```
 
-詳細な設定オプションは `data/pfe.cfg.example` を参照してください。
+`-DIR` が相対パスの場合は `ROM_BASE` から解決されます。`-CORE` に通常のコア名を書くとRetroArch、`SA:NAME` と書くと `TYPE_SA_NAME` のスクリプトを使います。
 
-### 2.5. ランチャースクリプトの準備
+詳しい設定項目は `data/pfe.cfg.example` を参照してください。
 
-PFEは外部スクリプトを通じてエミュレータを起動します。
+## 3. エミュレータ起動スクリプト
 
-#### RetroArch用スクリプト例 (`bin/retroarch.sh`)
+PFEはエミュレータ本体を直接決め打ちせず、`bin/` や任意の外部スクリプトに起動を委譲します。
+
+同梱スクリプト例:
+
+```txt
+bin/retroarch.sh
+bin/ppsspp.sh
+bin/yabasanshiro.sh
+bin/drastic.sh
+bin/pyxel.sh
+```
+
+実行権限を付けます。
 
 ```bash
-#!/bin/bash
-# 引数: $1=コアファイル名, $2=ROMパス
-CORE_PATH="/path/to/retroarch/cores"
-retroarch -L "${CORE_PATH}/$1" "$2"
+chmod +x bin/*.sh scripts/*.sh
 ```
 
-#### スタンドアローンエミュレータ用スクリプト例
+RetroArch用スクリプトは、PFEから次の引数を受け取ります。
 
-```bash
-#!/bin/bash
-# 引数: $1=ROMパス
-/usr/local/bin/ppsspp "$1"
+```txt
+bin/retroarch.sh <core_path_or_filename> <rom_path>
 ```
 
-スクリプトに実行権限を付与:
-```bash
-chmod +x bin/retroarch.sh
+スタンドアロン用スクリプトは、基本的にROMパスだけを受け取ります。
+
+```txt
+bin/ppsspp.sh <rom_path>
 ```
 
-#### WiFi/システム用スクリプト
+環境に合わせて `bin/*.sh` を編集するか、`data/pfe.cfg` の `TYPE_RA` / `TYPE_SA_*` に別のスクリプトパスを指定してください。
 
-PFEには以下のスクリプトが同梱されています:
+## 4. アセットの準備
 
+### BGM
+
+標準では `assets/bgm/` がBGMディレクトリです。
+
+```txt
+assets/bgm/
+  song1.mp3
+  song2.ogg
 ```
-scripts/
-├── wifi_scan.sh        # WiFiネットワークスキャン
-├── wifi_connect.sh     # WiFi接続
-├── wifi_status.sh      # WiFi電源状態取得
-├── wifi_toggle.sh      # WiFi電源ON/OFF
-├── get_brightness.sh   # 画面輝度取得
-└── set_brightness.sh   # 画面輝度設定
-```
 
-これらのスクリプトは`data/pfe.cfg`で設定されています:
+変更する場合は `data/pfe.cfg` に `BGM_DIR` を指定します。
 
 ```ini
-WIFI_SCAN_SCRIPT=./scripts/wifi_scan.sh
-WIFI_CONNECT_SCRIPT=./scripts/wifi_connect.sh
-WIFI_STATUS_SCRIPT=./scripts/wifi_status.sh
-WIFI_TOGGLE_SCRIPT=./scripts/wifi_toggle.sh
+BGM_DIR=./assets/bgm
 ```
 
-環境に合わせてスクリプトをカスタマイズすることも可能です。
+### スクリーンショット
 
-### 3. アセットの準備（オプション）
+標準では `assets/screenshots/` がスクリーンショットディレクトリです。`SCREENSHOT_DIR` を指定すると別の場所を使えます。
 
-#### スプラッシュ画像
-`assets/splash.png` または `assets/splash.jpg` を配置すると起動時に表示されます。
-
-#### BGM
-`assets/bgm.mp3` を配置するとBGMが再生されます。Settings画面でON/OFF切替可能です。
-
-#### スクリーンショット
-ROM選択画面でスクリーンショットを表示するには:
+```ini
+SCREENSHOT_DIR=assets/screenshots
 ```
+
+基本の配置:
+
+```txt
 assets/screenshots/
-├── nes/
-│   ├── Game Name.png  # ROMファイル名と同じ名前
-│   └── ...
-├── snes/
-│   └── ...
+  nes/
+    Game Name.png
+  snes/
+    Another Game.png
 ```
 
-#### カスタムフォント
-日本語フォントを使用する場合:
-- フォントファイルを `assets/fonts/` に配置
-- `data/pfe.cfg` に追加: `FONT_PATH=assets/fonts/your-font.ttf`
+画像名はROMファイル名から拡張子を除いた名前に合わせます。
 
-推奨フォント:
-- 美咲フォント (8x8): http://littlelimit.net/misaki.htm
-- Noto Sans CJK: https://fonts.google.com/noto/specimen/Noto+Sans+JP
+### スプラッシュ画像
 
-### 4. 起動
+起動時に画像を表示したい場合は、次のどちらかを置きます。
 
-#### 推奨: 自動再起動スクリプト
+```txt
+assets/splash.png
+assets/splash.jpg
+```
+
+### フォント
+
+日本語表示のためのフォントを明示したい場合は、`FONT_PATH` や `BDF_FONT_PATH` を指定します。
+
+```ini
+FONT_PATH=assets/fonts/your-font.ttf
+BDF_FONT_PATH=assets/fonts/umplus_j10r.bdf
+```
+
+未指定の場合、PFEは利用可能なフォントを自動検出します。
+
+## 5. 起動
+
+推奨:
 
 ```bash
-chmod +x launcher.sh
 ./launcher.sh
 ```
 
-ゲーム終了後に自動的にランチャーに戻ります。
+`launcher.sh` はゲーム終了後にPFEへ戻るための自動再起動や、環境変数の設定を担当します。
 
-#### 直接起動（手動再起動が必要）
+直接起動:
 
 ```bash
 python3 main.py
 ```
 
-## Linux（組み込み機器）向け設定
-
-### launcher.shの設定
-
-ALSAオーディオを使用する場合、`launcher.sh`で環境変数を設定:
+専用Pythonを使う場合:
 
 ```bash
-export SDL_AUDIODRIVER=alsa
-export SDL_GAMECONTROLLERCONFIG="..."  # コントローラー設定
+PFE_PYTHON=/path/to/python3 ./launcher.sh
 ```
 
-### 自動起動設定
+## 6. OS連携スクリプト
 
-システム起動時に自動的にランチャーを起動するには:
+WiFi、明るさ、バッテリー、CPUガバナー、電源操作などは `scripts/` の外部スクリプトで処理します。
+
+代表例:
+
+```txt
+scripts/wifi_scan.sh
+scripts/wifi_connect.sh
+scripts/get_battery.sh
+scripts/get_brightness.sh
+scripts/set_brightness.sh
+scripts/get_cpu_governor.sh
+scripts/set_cpu_governor.sh
+scripts/system_reboot.sh
+scripts/system_shutdown.sh
+```
+
+環境によって必要なコマンドや権限が異なるため、うまく動かない場合は `scripts/samples/` を参考にして置き換えてください。
+
+一般ユーザーでWiFiや電源操作を行う場合は、必要に応じてsudoers設定が必要です。
 
 ```bash
-# ~/.bashrc または /etc/rc.local に追加
-cd /path/to/pd && ./launcher.sh
+echo "username ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/pfe-wifi
+sudo chmod 440 /etc/sudoers.d/pfe-wifi
 ```
 
-### CPU Governor
+## 7. 自動起動
 
-CPUガバナーを変更するには、ファイルへの書き込み権限が必要です:
+systemdで起動する場合の最小例です。パスは実際の配置先に合わせてください。
 
-```bash
-# 権限確認
-ls -la /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+```ini
+[Unit]
+Description=PFE Frontend
 
-# 必要に応じてudevルールを追加
+[Service]
+Type=simple
+WorkingDirectory=/path/to/pfe
+ExecStart=/bin/bash /path/to/pfe/launcher.sh
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
 ```
 
-### WiFi設定の権限
-
-一般ユーザーでWiFi接続を行うには、nmcliのsudo権限が必要です:
-
-```bash
-echo "ark ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/wifi
-sudo chmod 440 /etc/sudoers.d/wifi
-```
-
-### 再起動/シャットダウンの権限
-
-一般ユーザーでシステムの再起動/シャットダウンを行うには:
-
-```bash
-echo "ark ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /sbin/reboot, /sbin/poweroff" | sudo tee /etc/sudoers.d/power
-sudo chmod 440 /etc/sudoers.d/power
-```
-
-**注意**: `ark`を実際のユーザー名に置き換えてください。
+ROCKNIXでは専用の `02_install_pfe.sh` を使うため、この例ではなく [ROCKNIX導入ガイド](docs/ROCKNIX_JP.md) を参照してください。
 
 ## トラブルシューティング
 
-### pyxel-universal-fontがインストールできない
+### 起動しない
 
 ```bash
-pip install --upgrade pip
-pip install pyxel-universal-font
+./scripts/install_deps.sh
+python3 -m compileall -q main.py pfe_app ui
+tail -n 80 data/debug.log
 ```
+
+`pfe_app` が見つからない場合は、PFE本体をディレクトリごと正しくコピーしてください。
+
+### ROMが表示されない
+
+- `ROM_BASE` と `-DIR` の組み合わせを確認
+- `-EXT` にROMの拡張子が含まれているか確認
+- ROMディレクトリが読み取り可能か確認
+
+### ゲームが起動しない
+
+- `TYPE_RA` や `TYPE_SA_*` のパスを確認
+- スクリプトに実行権限があるか確認
+- RetroArchコアの場所を確認
+- `data/debug.log` のエラーを確認
 
 ### BGMが再生されない
 
-1. pygameがインストールされているか確認:
-   ```bash
-   pip install pygame
-   ```
+- `BGM_DIR` の場所を確認
+- 対応形式の音声ファイルがあるか確認
+- Settings画面でBGMが有効か確認
+- pygameがインストールされているか確認
 
-2. `launcher.sh`で`SDL_AUDIODRIVER`がexportされているか確認:
-   ```bash
-   export SDL_AUDIODRIVER=alsa
-   ```
+### スクリーンショットが表示されない
 
-3. `assets/bgm.mp3`が存在するか確認
+- `SCREENSHOT_DIR` の場所を確認
+- システム名のディレクトリが合っているか確認
+- 画像ファイル名がROM名と合っているか確認
 
-4. Settings画面でBGMがOnになっているか確認
+### WiFiや電源操作が動かない
 
-### フォントが表示されない
+- `scripts/*.sh` がその環境に合っているか確認
+- 必要なコマンドがインストールされているか確認
+- sudoersなどの権限設定を確認
 
-1. フォントパスが正しいか確認
-2. フォントファイルが存在するか確認
-3. `DEBUG=true`にして起動時のログを確認
+### デバッグログ
 
-### 画面が表示されない
-
-1. Pyxelが正しくインストールされているか確認
-2. グラフィックドライバが最新か確認
-3. SDLの環境変数を確認
-
-### ゲーム起動後に前の画面に戻らない
-
-1. `launcher.sh`を使用しているか確認
-2. セッションファイル（`data/session.json`）の権限を確認
-
-### CPU Governorが変更できない
-
-1. パスが正しいか確認:
-   ```bash
-   cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-   ```
-
-2. `pfe.cfg`で`CPU_GOVERNOR_PATH`を設定:
-   ```ini
-   CPU_GOVERNOR_PATH=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-   ```
-
-3. ファイルへの書き込み権限を確認
-
-### WiFi接続に失敗する
-
-1. デバッグログを確認:
-   ```bash
-   cat data/debug.log
-   ```
-
-2. nmcliが動作するか確認:
-   ```bash
-   nmcli device wifi list
-   ```
-
-3. 権限エラーの場合、sudoers設定を追加（上記「WiFi設定の権限」参照）
-
-4. `Insufficient privileges`エラーが出る場合:
-   - systemdサービス経由で実行している場合に発生
-   - sudoers設定が必要
-
-### 再起動/シャットダウンが動作しない
-
-1. デバッグログを確認:
-   ```bash
-   tail -20 data/debug.log
-   ```
-
-2. 権限エラーの場合、sudoers設定を追加（上記「再起動/シャットダウンの権限」参照）
-
-### デバッグログの確認
-
-`DEBUG=true`を設定すると、`data/debug.log`にログが出力されます:
+`data/pfe.cfg` で `DEBUG=true` にすると詳細ログが増えます。
 
 ```bash
-# リアルタイムでログを確認
 tail -f data/debug.log
-
-# 最新のログを確認
-cat data/debug.log
 ```
-
-systemdサービスとして実行している場合、コンソールにログが表示されないため、
-ファイルログが問題の診断に役立ちます。

@@ -30,14 +30,16 @@ class Action(Enum):
 class InputHandler:
     """Handles input from keyboard and gamepad."""
 
-    def __init__(self, button_layout="NINTENDO"):
+    def __init__(self, button_layout=None):
         """
         Initialize input handler.
 
         Args:
-            button_layout: "NINTENDO" or "XBOX" button layout
+            button_layout: Legacy setting. Ignored; use keyconfig.json instead.
         """
-        self.button_layout = button_layout
+        if button_layout:
+            from pfe_app.debug import debug_print
+            debug_print(f"Legacy button_layout ignored: {button_layout}; use Key Mapping Wizard")
 
         # Key repeat settings
         self.repeat_delay = 8  # Frame count (approximately 0.27 seconds @ 30fps)
@@ -58,6 +60,23 @@ class InputHandler:
         # Build key map
         self._build_key_map()
 
+    def _resolve_key_value(self, value):
+        """Resolve a key config value to a numeric pyxel key code.
+
+        Handles both symbolic names (e.g. "GAMEPAD1_BUTTON_A") and raw integers.
+        Returns the numeric key code, or None if unresolvable.
+        """
+        if isinstance(value, int):
+            # Legacy numeric value - check if it's valid in current pyxel version
+            return value
+        if isinstance(value, str):
+            # Symbolic name - resolve to current pyxel constant
+            resolved = getattr(pyxel, value, None)
+            if resolved is not None:
+                return resolved
+            print(f"Warning: Unknown pyxel constant '{value}'")
+        return None
+
     def load_key_config(self):
         """Load custom key configuration from file."""
         config_file = "data/keyconfig.json"
@@ -69,14 +88,29 @@ class InputHandler:
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
-                self.custom_key_config = config_data.get("bindings", {})
-                print(f"Custom key config loaded: {len(self.custom_key_config)} keys")
+                raw_bindings = config_data.get("bindings", {})
+
+                # Resolve symbolic names to numeric values
+                resolved = {}
+                for action, value in raw_bindings.items():
+                    key_code = self._resolve_key_value(value)
+                    if key_code is not None:
+                        resolved[action] = key_code
+                    else:
+                        print(f"Warning: Skipping invalid key binding {action}={value}")
+
+                if resolved:
+                    self.custom_key_config = resolved
+                    print(f"Custom key config loaded: {len(self.custom_key_config)} keys")
+                else:
+                    print("Warning: No valid key bindings found, using defaults")
+                    self.custom_key_config = None
         except Exception as e:
             print(f"Error loading key config: {e}")
             self.custom_key_config = None
 
     def _build_key_map(self):
-        """Build key map based on current button layout or custom config."""
+        """Build key map from custom config, or from the fixed default mapping."""
         # Prioritize custom settings if available
         if self.custom_key_config:
             self.key_map = {}
@@ -110,31 +144,17 @@ class InputHandler:
             print("Key map built from custom config")
             return
 
-        # Default settings
-        # Determine gamepad button mapping based on layout
-        if self.button_layout == "XBOX":
-            # Xbox/Steam Deck layout: B=confirm, A=back
-            gamepad_a = pyxel.GAMEPAD1_BUTTON_B
-            gamepad_b = pyxel.GAMEPAD1_BUTTON_A
-            gamepad_x = pyxel.GAMEPAD1_BUTTON_Y
-            gamepad_y = pyxel.GAMEPAD1_BUTTON_X
-        else:
-            # Nintendo/Anbernic layout: A=confirm, B=back
-            gamepad_a = pyxel.GAMEPAD1_BUTTON_A
-            gamepad_b = pyxel.GAMEPAD1_BUTTON_B
-            gamepad_x = pyxel.GAMEPAD1_BUTTON_X
-            gamepad_y = pyxel.GAMEPAD1_BUTTON_Y
-
-        # Key mappings (keyboard + gamepad)
+        # Default keyboard + gamepad mapping. Device-specific differences should
+        # be corrected through SDL mappings or PFE's Key Mapping Wizard.
         self.key_map = {
             Action.UP: [pyxel.KEY_UP, pyxel.GAMEPAD1_BUTTON_DPAD_UP],
             Action.DOWN: [pyxel.KEY_DOWN, pyxel.GAMEPAD1_BUTTON_DPAD_DOWN],
             Action.LEFT: [pyxel.KEY_LEFT, pyxel.GAMEPAD1_BUTTON_DPAD_LEFT],
             Action.RIGHT: [pyxel.KEY_RIGHT, pyxel.GAMEPAD1_BUTTON_DPAD_RIGHT],
-            Action.A: [pyxel.KEY_Z, pyxel.KEY_RETURN, gamepad_a],
-            Action.B: [pyxel.KEY_X, pyxel.KEY_ESCAPE, gamepad_b],
-            Action.X: [pyxel.KEY_A, gamepad_x],
-            Action.Y: [pyxel.KEY_S, gamepad_y],
+            Action.A: [pyxel.KEY_Z, pyxel.KEY_RETURN, pyxel.GAMEPAD1_BUTTON_A],
+            Action.B: [pyxel.KEY_X, pyxel.KEY_ESCAPE, pyxel.GAMEPAD1_BUTTON_B],
+            Action.X: [pyxel.KEY_A, pyxel.GAMEPAD1_BUTTON_X],
+            Action.Y: [pyxel.KEY_S, pyxel.GAMEPAD1_BUTTON_Y],
             Action.L: [pyxel.KEY_Q, pyxel.GAMEPAD1_BUTTON_LEFTSHOULDER],
             Action.R: [pyxel.KEY_W, pyxel.GAMEPAD1_BUTTON_RIGHTSHOULDER],
             Action.L2: [pyxel.KEY_E],
@@ -145,16 +165,13 @@ class InputHandler:
 
     def set_button_layout(self, button_layout: str):
         """
-        Change button layout dynamically.
+        Legacy no-op kept for older callers.
 
         Args:
-            button_layout: "NINTENDO" or "XBOX"
+            button_layout: Ignored legacy value.
         """
-        if button_layout != self.button_layout:
-            self.button_layout = button_layout
-            self._build_key_map()
-            from debug import debug_print
-            debug_print(f"Button layout changed to: {button_layout}")
+        from pfe_app.debug import debug_print
+        debug_print(f"Legacy button_layout ignored: {button_layout}; use Key Mapping Wizard")
 
         # Key repeat settings
         self.repeat_delay = 8  # Frame count (approximately 0.27 seconds @ 30fps)
@@ -292,6 +309,13 @@ class InputHandler:
     def clear_text_input(self):
         """Clear text input buffer."""
         self.text_input = ""
+
+    def reset_runtime_state(self):
+        """Clear transient input state after returning from an external emulator."""
+        self.hold_frames.clear()
+        self._axis_prev_values.clear()
+        self.text_input = ""
+        self.text_input_mode = False
 
 
 # Example usage

@@ -7,7 +7,7 @@ import os
 import pyxel
 from PIL import Image
 from typing import Optional
-from debug import debug_print
+from pfe_app.debug import debug_print
 
 
 class ScreenshotLoader:

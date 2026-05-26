@@ -10,9 +10,9 @@ from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText, SystemStatus
 from ui.window import DQWindow
 from ui.software_keyboard import SoftwareKeyboard
-from japanese_text import draw_japanese_text
-from theme_manager import get_theme_manager
-from debug import debug_print
+from pfe_app.japanese_text import draw_japanese_text
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.debug import debug_print
 
 
 class WiFiSettings(ScrollableList):
@@ -33,6 +33,8 @@ class WiFiSettings(ScrollableList):
         self.wifi_connect_script = config.global_vars.get('WIFI_CONNECT_SCRIPT', '')
         self.wifi_status_script = config.global_vars.get('WIFI_STATUS_SCRIPT', '')
         self.wifi_toggle_script = config.global_vars.get('WIFI_TOGGLE_SCRIPT', '')
+        self.wifi_scan_timeout = self._int_setting('WIFI_SCAN_TIMEOUT', 30)
+        self.wifi_scan_wait_seconds = self._int_setting('WIFI_SCAN_WAIT_SECONDS', 6)
 
         # Data file paths
         self.data_dir = "data"
@@ -54,6 +56,20 @@ class WiFiSettings(ScrollableList):
 
         # WiFi power state
         self.wifi_enabled = True
+
+    def _int_setting(self, key: str, default: int) -> int:
+        try:
+            value = int(self.config.global_vars.get(key, default))
+            return max(1, value)
+        except (TypeError, ValueError):
+            return default
+
+    def _wifi_scan_env(self):
+        env = os.environ.copy()
+        env["WIFI_INTERFACE"] = self.wifi_interface
+        env["WIFI_SCAN_TIMEOUT"] = str(self.wifi_scan_timeout)
+        env["WIFI_SCAN_WAIT_SECONDS"] = str(self.wifi_scan_wait_seconds)
+        return env
 
     def _is_root(self):
         """Check if running as root user."""
@@ -221,7 +237,8 @@ class WiFiSettings(ScrollableList):
                 result = subprocess.run([self.wifi_scan_script],
                                       capture_output=True,
                                       text=True,
-                                      timeout=10)
+                                      timeout=self.wifi_scan_timeout,
+                                      env=self._wifi_scan_env())
                 debug_print(f"[WiFi] Scan script exit code: {result.returncode}")
                 debug_print(f"[WiFi] Scan script stdout: {result.stdout}")
                 debug_print(f"[WiFi] Scan script stderr: {result.stderr}")
@@ -234,18 +251,20 @@ class WiFiSettings(ScrollableList):
                 subprocess.run(rescan_cmd,
                              capture_output=True,
                              text=True,
-                             timeout=5)
+                             timeout=min(self.wifi_scan_timeout, 15),
+                             env=self._wifi_scan_env())
 
                 # Wait a moment before getting the list
                 import time
-                time.sleep(2)
+                time.sleep(self.wifi_scan_wait_seconds)
 
                 cmd = ['nmcli', '-t', '-f', 'SSID', 'device', 'wifi', 'list']
                 debug_print(f"[WiFi] Running scan command: {' '.join(cmd)}")
                 result = subprocess.run(cmd,
                                       capture_output=True,
                                       text=True,
-                                      timeout=10)
+                                      timeout=self.wifi_scan_timeout,
+                                      env=self._wifi_scan_env())
                 debug_print(f"[WiFi] Scan exit code: {result.returncode}")
                 debug_print(f"[WiFi] Scan stdout: {result.stdout}")
                 debug_print(f"[WiFi] Scan stderr: {result.stderr}")
@@ -354,7 +373,7 @@ class WiFiSettings(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         if self.mode == "scan":
             # SSID selection mode

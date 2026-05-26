@@ -1,14 +1,14 @@
 """
 Favorites screen for viewing favorite ROMs.
 """
-from theme_manager import get_theme_manager
+from pfe_app.theme_manager import get_theme_manager
 
 import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText, Breadcrumb
 from ui.window import DQWindow
-from rom_manager import ROMFile
-from japanese_text import draw_japanese_text
+from pfe_app.rom_manager import ROMFile
+from pfe_app.japanese_text import draw_japanese_text
 import os
 
 
@@ -73,8 +73,8 @@ class Favorites(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
-        from state_manager import AppState
+        from pfe_app.input_handler import Action
+        from pfe_app.state_manager import AppState
 
         # Navigation
         if self.input_handler.is_pressed_with_repeat(Action.UP):
@@ -112,7 +112,7 @@ class Favorites(ScrollableList):
         # Back to main menu
         if self.input_handler.is_pressed(Action.B):
             # Clear history and go directly to main menu
-            from state_manager import AppState
+            from pfe_app.state_manager import AppState
             self.state_manager.current_state = AppState.MAIN_MENU
             self.state_manager.state_history.clear()
 

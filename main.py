@@ -5,42 +5,25 @@ Main entry point for Pyxel ROM Launcher.
 import time
 _start_time = time.time()
 def _log_time(label):
-    from debug import debug_print
+    from pfe_app.debug import debug_print
     debug_print(f"[STARTUP] {label}: {(time.time() - _start_time)*1000:.0f}ms")
 
 _log_time("Before imports")
 import pyxel
 _log_time("pyxel imported")
-from config import Config
-from state_manager import StateManager, AppState
-from input_handler import InputHandler
-from rom_manager import ROMManager
-from launcher import Launcher
-from persistence import PersistenceManager
+from pfe_app.config import Config
+from pfe_app.state_manager import StateManager, AppState
+from pfe_app.input_handler import InputHandler
+from pfe_app.rom_manager import ROMManager
+from pfe_app.launcher import Launcher
+from pfe_app.persistence import PersistenceManager
 _log_time("Core modules imported")
-from ui.splash import Splash
-from ui.main_menu import MainMenu
-from ui.file_list import FileList
-from ui.core_select import CoreSelect
-from ui.favorites import Favorites
-from ui.recent import Recent
-from ui.search import Search
-from ui.settings import Settings
-from ui.wifi_settings import WiFiSettings
-from ui.key_config_menu import KeyConfigMenu
-from ui.key_config import KeyConfig
-from ui.bgm_config import BGMConfig
-from ui.datetime_settings import DateTimeSettings
-from ui.statistics import Statistics
-from ui.about import About
-from ui.quit_menu import QuitMenu
-from ui.components import Toast
-_log_time("UI modules imported")
-from japanese_text import init_japanese_text
-from theme_manager import get_theme_manager, init_theme
-from system_monitor import init_system_monitor, get_system_monitor
-from bgm_manager import init_bgm, get_bgm_manager
-from debug import debug_print
+from pfe_app.japanese_text import init_japanese_text
+from pfe_app.palette_manager import init_palette
+from pfe_app.theme_manager import get_theme_manager, init_theme
+from pfe_app.system_monitor import init_system_monitor, get_system_monitor
+from pfe_app.bgm_manager import init_bgm, get_bgm_manager
+from pfe_app.debug import debug_print, environment_snapshot
 _log_time("All imports done")
 
 
@@ -68,8 +51,54 @@ class ROMApp:
         else:  # "1:1" or default
             return 160, 160
 
+    def _get_config_bool(self, keys, default: bool) -> bool:
+        """Read a bool-ish value from data/pfe.cfg using one of several keys."""
+        for key in keys:
+            if key in self.config.global_vars:
+                value = str(self.config.global_vars[key]).strip().lower()
+                return value in ("1", "true", "yes", "on")
+        return default
+
     def __init__(self):
         _log_time("Start __init__")
+
+        # Load lightweight settings before Pyxel; actual BGM playback is deferred so
+        # startup is not blocked by pygame's import cost.
+        self.config = Config("data/pfe.cfg")
+        _log_time("Config loaded")
+        environment_snapshot()
+        self.resume_after_game = self._get_config_bool(
+            ["RESUME_AFTER_GAME", "RETURN_AFTER_GAME", "KEEP_PFE_RUNNING_AFTER_GAME"],
+            True,
+        )
+        debug_print(f"Resume after game: {self.resume_after_game}")
+
+        self.persistence = PersistenceManager()
+        settings = self.persistence.load_settings()
+        _log_time("Settings loaded")
+
+        self.bgm_manager = get_bgm_manager()
+        self.bgm_manager.set_bgm_directory(self.config.get_bgm_dir())
+
+        bgm_enabled = settings.get("bgm_enabled", "On") == "On"
+        bgm_volume_str = settings.get("bgm_volume", "5")
+        try:
+            bgm_volume = int(bgm_volume_str) / 10.0
+        except:
+            bgm_volume = 0.5
+        bgm_mode = settings.get("bgm_mode", "Normal")
+        bgm_driver = settings.get("bgm_driver", "pygame").lower()
+
+        # Defer driver initialization until playback. The pygame driver runs in a
+        # helper process, so it can start after Pyxel without losing 44.1kHz output.
+        self.bgm_manager.set_driver(bgm_driver, initialize=False, allow_fallback=False)
+        self.bgm_manager.enabled = bgm_enabled
+        self.bgm_manager.set_volume(bgm_volume)
+        self.bgm_manager.set_play_mode(bgm_mode)
+        self._bgm_auto_play = bgm_enabled
+        self._bgm_initialized = False
+        self._pending_bgm_resume_frames = 0
+        _log_time("BGM settings preloaded")
 
         # Load resolution setting before Pyxel init
         screen_width, screen_height = self._get_screen_resolution()
@@ -79,31 +108,31 @@ class ROMApp:
         pyxel.init(screen_width, screen_height, title="ROM Launcher", fps=30)
         _log_time("Pyxel init")
 
-        # Load configuration first
-        self.config = Config("data/pfe.cfg")
-        _log_time("Config loaded")
+        # Initialize 256-color palette before images and theme-dependent drawing
+        init_palette(self.config)
+        _log_time("Palette init")
 
         # Initialize Japanese text support with custom font
         font_path = self.config.get_font_path()
-        init_japanese_text(font_path=font_path if font_path else None)
+        init_japanese_text(
+            font_path=font_path if font_path else None,
+            backend=self.config.get_font_backend(),
+            bdf_font_path=self.config.get_bdf_font_path() or None,
+        )
         _log_time("Japanese text init")
 
-        # Initialize managers (persistence must be first for settings loading)
-        self.persistence = PersistenceManager()
+        # Initialize managers
         self.state_manager = StateManager()
 
-        # Get button layout from settings.json (default: NINTENDO)
-        settings = self.persistence.load_settings()
-        button_layout = settings.get('button_layout', 'NINTENDO')
-        debug_print(f"Button layout: {button_layout}")
+        if settings.get("button_layout"):
+            debug_print(f"Legacy button_layout ignored: {settings.get('button_layout')}; use Key Mapping Wizard")
 
-        self.input_handler = InputHandler(button_layout)
+        self.input_handler = InputHandler()
         self.rom_manager = ROMManager()
         self.launcher = Launcher(self.config)
         _log_time("Managers init")
 
         # Initialize theme system (after persistence)
-        settings = self.persistence.load_settings()
         theme_id = settings.get("theme", "dark")
         init_theme(theme_id)
         self.theme_manager = get_theme_manager()
@@ -113,35 +142,8 @@ class ROMApp:
         self.system_monitor = init_system_monitor(self.config)
         _log_time("System monitor init")
 
-        # Get BGM manager
-        self.bgm_manager = get_bgm_manager()
-        # Set BGM directory from config
-        self.bgm_manager.set_bgm_directory(self.config.get_bgm_dir())
-        _log_time("BGM manager get")
-
-        # Load BGM settings
-        settings = self.persistence.load_settings()
-        bgm_enabled = settings.get("bgm_enabled", "On") == "On"
-        bgm_volume_str = settings.get("bgm_volume", "5")
-        try:
-            bgm_volume = int(bgm_volume_str) / 10.0
-        except:
-            bgm_volume = 0.5
-        bgm_mode = settings.get("bgm_mode", "Normal")
-
-        # Apply BGM settings first (enabled flag, volume, play mode)
-        # Note: Actual mixer operations are deferred to delay pygame import
-        self.bgm_manager.enabled = bgm_enabled
-        self.bgm_manager.set_volume(bgm_volume)
-        self.bgm_manager.set_play_mode(bgm_mode)
-
-        # Defer BGM initialization until after splash screen
-        self._bgm_auto_play = bgm_enabled
-        self._bgm_initialized = False
-        _log_time("BGM settings saved (deferred init)")
-
         # Apply screen brightness
-        from brightness_manager import get_brightness_manager
+        from pfe_app.brightness_manager import get_brightness_manager
         self.brightness_manager = get_brightness_manager()
         if self.brightness_manager.is_available():
             brightness_str = settings.get("brightness", "5")
@@ -164,25 +166,35 @@ class ROMApp:
         self._search = None
         self._settings = None
         self._wifi_settings = None
+        self._bluetooth_settings = None
         self._key_config_menu = None
         self._key_config = None
         self._bgm_config = None
         self._datetime_settings = None
         self._statistics = None
+        self._image_cache_screen = None
+        self._help_screen = None
         self._about = None
         self._quit_menu = None
         _log_time("UI screens init (lazy)")
 
         # UI components
+        from ui.components import Toast
         self.toast = Toast()
 
         # Restore session state (state is saved in state_data and applied after splash)
         self._restore_session()
         _log_time("Session restored")
 
-        # Always start from splash screen
-        self.state_manager.current_state = AppState.SPLASH
-        self.splash.activate()
+        # Start from splash only when a splash asset exists; otherwise avoid importing
+        # the splash/image path and jump straight to the restored screen.
+        if self._has_splash_asset():
+            self.state_manager.current_state = AppState.SPLASH
+            self.splash.activate()
+            _log_time("Splash activated")
+        else:
+            self._enter_post_splash_state()
+            _log_time("Splash skipped")
 
         # Launch request handling
         self.pending_launch = False
@@ -197,106 +209,164 @@ class ROMApp:
     @property
     def splash(self):
         if self._splash is None:
+            from ui.splash import Splash
             self._splash = Splash(self.input_handler, self.state_manager, self.config)
         return self._splash
 
     @property
     def main_menu(self):
         if self._main_menu is None:
+            from ui.main_menu import MainMenu
             self._main_menu = MainMenu(self.input_handler, self.state_manager, self.config, self.persistence)
         return self._main_menu
 
     @property
     def file_list(self):
         if self._file_list is None:
+            from ui.file_list import FileList
             self._file_list = FileList(self.input_handler, self.state_manager, self.config, self.rom_manager, self.persistence)
         return self._file_list
 
     @property
     def core_select(self):
         if self._core_select is None:
+            from ui.core_select import CoreSelect
             self._core_select = CoreSelect(self.input_handler, self.state_manager, self.persistence)
         return self._core_select
 
     @property
     def favorites(self):
         if self._favorites is None:
+            from ui.favorites import Favorites
             self._favorites = Favorites(self.input_handler, self.state_manager, self.config, self.persistence)
         return self._favorites
 
     @property
     def recent(self):
         if self._recent is None:
+            from ui.recent import Recent
             self._recent = Recent(self.input_handler, self.state_manager, self.config, self.persistence)
         return self._recent
 
     @property
     def search(self):
         if self._search is None:
+            from ui.search import Search
             self._search = Search(self.input_handler, self.state_manager, self.config, self.rom_manager, self.persistence)
         return self._search
 
     @property
     def settings(self):
         if self._settings is None:
+            from ui.settings import Settings
             self._settings = Settings(self.input_handler, self.state_manager, self.config, self.persistence)
         return self._settings
 
     @property
     def wifi_settings(self):
         if self._wifi_settings is None:
+            from ui.wifi_settings import WiFiSettings
             self._wifi_settings = WiFiSettings(self.input_handler, self.state_manager, self.config)
         return self._wifi_settings
 
     @property
+    def bluetooth_settings(self):
+        if self._bluetooth_settings is None:
+            from ui.bluetooth_settings import BluetoothSettings
+            self._bluetooth_settings = BluetoothSettings(self.input_handler, self.state_manager, self.config)
+        return self._bluetooth_settings
+
+    @property
     def key_config_menu(self):
         if self._key_config_menu is None:
+            from ui.key_config_menu import KeyConfigMenu
             self._key_config_menu = KeyConfigMenu(self.input_handler, self.state_manager, self.persistence)
         return self._key_config_menu
 
     @property
     def key_config(self):
         if self._key_config is None:
+            from ui.key_config import KeyConfig
             self._key_config = KeyConfig(self.input_handler, self.state_manager, self.config)
         return self._key_config
 
     @property
     def bgm_config(self):
         if self._bgm_config is None:
+            from ui.bgm_config import BGMConfig
             self._bgm_config = BGMConfig(self.input_handler, self.state_manager, self.persistence)
         return self._bgm_config
 
     @property
     def datetime_settings(self):
         if self._datetime_settings is None:
+            from ui.datetime_settings import DateTimeSettings
             self._datetime_settings = DateTimeSettings(self.input_handler, self.state_manager, self.config)
         return self._datetime_settings
 
     @property
     def statistics(self):
         if self._statistics is None:
+            from ui.statistics import Statistics
             self._statistics = Statistics(self.input_handler, self.state_manager, self.config, self.persistence)
         return self._statistics
 
     @property
+    def image_cache_screen(self):
+        if self._image_cache_screen is None:
+            from ui.image_cache_screen import ImageCacheScreen
+            self._image_cache_screen = ImageCacheScreen(self.input_handler, self.state_manager, self.config)
+        return self._image_cache_screen
+
+    @property
+    def help_screen(self):
+        if self._help_screen is None:
+            from ui.help_screen import HelpScreen
+            self._help_screen = HelpScreen(self.input_handler, self.state_manager)
+        return self._help_screen
+
+    @property
     def about(self):
         if self._about is None:
+            from ui.about import About
             self._about = About(self.input_handler, self.state_manager, self.config)
         return self._about
 
     @property
     def quit_menu(self):
         if self._quit_menu is None:
+            from ui.quit_menu import QuitMenu
             self._quit_menu = QuitMenu(self.input_handler, self.state_manager, self.config)
         return self._quit_menu
+
+    def _has_splash_asset(self) -> bool:
+        """Return whether startup should instantiate the splash screen."""
+        import os
+        splash_paths = (
+            "assets/splash.png",
+            "assets/splash.jpg",
+            "assets/splash.jpeg",
+            "assets/images/splash.png",
+            "assets/images/splash.jpg",
+        )
+        return any(os.path.exists(path) for path in splash_paths)
+
+    def _enter_post_splash_state(self):
+        """Enter the restored screen without constructing the splash screen."""
+        post_splash_state = self.state_manager.get_data('post_splash_state')
+        if post_splash_state:
+            self.state_manager.change_state(post_splash_state, push_history=False)
+            self.state_manager.set_data('post_splash_state', None)
+        else:
+            self.state_manager.change_state(AppState.MAIN_MENU, push_history=False)
 
     def _deactivate_all_except(self, exclude_attr):
         """Deactivate all initialized screens except the specified one."""
         screens = [
             '_splash', '_main_menu', '_file_list', '_core_select',
             '_favorites', '_recent', '_search', '_settings',
-            '_wifi_settings', '_key_config_menu', '_key_config', '_bgm_config', '_datetime_settings',
-            '_statistics', '_about', '_quit_menu'
+            '_wifi_settings', '_bluetooth_settings', '_key_config_menu', '_key_config', '_bgm_config', '_datetime_settings',
+            '_statistics', '_image_cache_screen', '_help_screen', '_about', '_quit_menu'
         ]
         for attr in screens:
             if attr != exclude_attr:
@@ -306,7 +376,7 @@ class ROMApp:
 
     def _check_any_input(self) -> bool:
         """Check if any input was detected."""
-        from input_handler import Action
+        from pfe_app.input_handler import Action
         for action in Action:
             if self.input_handler.is_held(action):
                 return True
@@ -323,6 +393,11 @@ class ROMApp:
             debug_print("[STARTUP] Deferred BGM initialization starting...")
             init_bgm(auto_play=self._bgm_auto_play)
             debug_print("[STARTUP] Deferred BGM initialization complete")
+
+        if self._pending_bgm_resume_frames > 0:
+            self._pending_bgm_resume_frames -= 1
+            if self._pending_bgm_resume_frames == 0:
+                self._resume_bgm_after_game()
 
         # Check if BGM track ended (advance to next track)
         if self._bgm_initialized:
@@ -406,6 +481,12 @@ class ROMApp:
                 self.wifi_settings.activate()
             self.wifi_settings.update()
 
+        elif current_state == AppState.BLUETOOTH_SETTINGS:
+            if not self.bluetooth_settings.active:
+                self._deactivate_all_except('_bluetooth_settings')
+                self.bluetooth_settings.activate()
+            self.bluetooth_settings.update()
+
         elif current_state == AppState.KEY_CONFIG_MENU:
             if not self.key_config_menu.active:
                 self._deactivate_all_except('_key_config_menu')
@@ -436,6 +517,18 @@ class ROMApp:
                 self.statistics.activate()
             self.statistics.update()
 
+        elif current_state == AppState.IMAGE_CACHE:
+            if not self.image_cache_screen.active:
+                self._deactivate_all_except('_image_cache_screen')
+                self.image_cache_screen.activate()
+            self.image_cache_screen.update()
+
+        elif current_state == AppState.HELP:
+            if not self.help_screen.active:
+                self._deactivate_all_except('_help_screen')
+                self.help_screen.activate()
+            self.help_screen.update()
+
         elif current_state == AppState.ABOUT:
             if not self.about.active:
                 self._deactivate_all_except('_about')
@@ -464,7 +557,11 @@ class ROMApp:
         if current_state == AppState.FILE_LIST and self._file_list is not None:
             if self._file_list.view_mode == "gallery":
                 # Redraw during slide animation
-                if abs(self._file_list.gallery_animation_offset) > 0.01:
+                if (
+                    self._file_list.gallery_animation_direction != 0
+                    or self._file_list.gallery_post_scroll_load_cooldown > 0
+                    or self._file_list.gallery_pending_deferred_image_load
+                ):
                     self._needs_redraw = True
                 # During slideshow, only redraw when switching images
                 # (Periodic clock updates are handled by _redraw_interval)
@@ -517,16 +614,22 @@ class ROMApp:
 
             print("Session restored")
 
-    def _save_session(self):
+    def _save_session(self, deactivate_active: bool = True):
         """Save session state."""
         # Call deactivate to save current screen state
         current_state = self.state_manager.get_state()
         debug_print(f"[SAVE_SESSION] current_state={current_state}, _file_list={self._file_list is not None}")
         if self._file_list is not None:
             debug_print(f"[SAVE_SESSION] file_list.active={self._file_list.active}, view_mode={self._file_list.view_mode}")
-        if current_state == AppState.FILE_LIST and self._file_list is not None and self._file_list.active:
+        if deactivate_active and current_state == AppState.FILE_LIST and self._file_list is not None and self._file_list.active:
             debug_print("[SAVE_SESSION] Calling file_list.deactivate()")
             self._file_list.deactivate()
+        elif current_state == AppState.FILE_LIST and self._file_list is not None and self._file_list.current_category:
+            self.state_manager.save_category_position(
+                self._file_list.current_category.name,
+                self._file_list.selected_index,
+                self._file_list.scroll_offset,
+            )
 
         # Don't save SPLASH state (start from MAIN_MENU on next launch)
         state_to_save = self.state_manager.current_state.value
@@ -577,11 +680,17 @@ class ROMApp:
             print(f"Launching: {rom_to_launch.name}")
             self.toast.show(f"Launching {rom_to_launch.name}...", duration=90)
 
+            # Hide the last PFE frame before handing the display to the emulator.
+            # Some handheld Linux stacks briefly restore Pyxel's previous buffer
+            # after the emulator exits; keeping both buffers black avoids a flash.
+            self._blank_launch_screen()
+
             # Launch ROM
             success = self.launcher.launch_rom(rom_to_launch, launch_category, core)
 
             if success:
                 print("ROM launched successfully")
+                self._blank_launch_screen()
 
                 # Determine actual core used
                 core_name = core if core else (launch_category.cores[0] if launch_category.cores else "unknown")
@@ -598,20 +707,56 @@ class ROMApp:
                 )
 
                 # Save session state (for restoration after restart)
-                self._save_session()
+                self._save_session(deactivate_active=not self.resume_after_game)
 
-                # Exit PFE (restart required due to KMS/DRM display constraints)
-                # launcher.sh will restart PFE and the session will be restored
-                pyxel.quit()
+                if self.launcher.should_exit_after_launch():
+                    pyxel.quit()
+                elif self.resume_after_game:
+                    self._resume_pfe_after_game()
+                else:
+                    # Exit PFE (restart required on some KMS/DRM display stacks)
+                    # launcher.sh will restart PFE and the session will be restored.
+                    pyxel.quit()
             else:
                 error = self.launcher.get_last_error()
                 print(f"Launch failed: {error}")
                 self.toast.show(f"Launch failed: {error}", duration=120)
+                self._needs_redraw = True
 
             # Clear launch data
             self.state_manager.set_data('rom_to_launch', None)
             self.state_manager.set_data('launch_category', None)
             self.state_manager.set_temp_core_override(None)
+
+    def _blank_launch_screen(self):
+        """Present a black frame immediately before/after emulator launch."""
+        try:
+            for _ in range(2):
+                pyxel.cls(0)
+                pyxel.flip()
+        except Exception as e:
+            debug_print(f"[LaunchCover] Failed to blank screen: {e}")
+
+    def _resume_pfe_after_game(self):
+        """Resume the existing PFE process after an emulator exits."""
+        debug_print("[Launch] Resuming PFE without restart")
+        self.toast.duration = 0
+        self._needs_redraw = True
+        self._redraw_counter = 0
+        if hasattr(self.input_handler, "reset_runtime_state"):
+            self.input_handler.reset_runtime_state()
+        if self._bgm_initialized and self._bgm_auto_play and self.bgm_manager.enabled:
+            self._pending_bgm_resume_frames = 15
+
+    def _resume_bgm_after_game(self):
+        """Restart BGM a short moment after the UI has redrawn."""
+        if not (self._bgm_initialized and self._bgm_auto_play and self.bgm_manager.enabled):
+            return
+        if self.bgm_manager.is_bgm_playing():
+            return
+        debug_print("[Launch] Resuming BGM after game")
+        self.bgm_manager.play()
+        self._needs_redraw = True
 
     def draw(self):
         """Draw graphics."""
@@ -646,6 +791,8 @@ class ROMApp:
             self.settings.draw()
         elif current_state == AppState.WIFI_SETTINGS:
             self.wifi_settings.draw()
+        elif current_state == AppState.BLUETOOTH_SETTINGS:
+            self.bluetooth_settings.draw()
         elif current_state == AppState.KEY_CONFIG_MENU:
             self.key_config_menu.draw()
         elif current_state == AppState.KEY_CONFIG:
@@ -656,6 +803,10 @@ class ROMApp:
             self.datetime_settings.draw()
         elif current_state == AppState.STATISTICS:
             self.statistics.draw()
+        elif current_state == AppState.IMAGE_CACHE:
+            self.image_cache_screen.draw()
+        elif current_state == AppState.HELP:
+            self.help_screen.draw()
         elif current_state == AppState.ABOUT:
             self.about.draw()
         elif current_state == AppState.QUIT_MENU:

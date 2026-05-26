@@ -4,9 +4,9 @@ Splash screen displayed on startup.
 
 import os
 import pyxel
-from PIL import Image
 from ui.base import UIScreen
-from theme_manager import get_theme_manager
+from pfe_app.theme_manager import get_theme_manager
+from pfe_app.image_cache import ImageCache
 
 
 class Splash(UIScreen):
@@ -20,12 +20,10 @@ class Splash(UIScreen):
 
         # スプラッシュ画像 (サイズは実行時に決定)
         self.splash_loaded = False
-        self.splash_image_bank = 2  # イメージバンク2を使用
+        self.splash_image = None
         self.splash_width = None  # activate時にpyxel.widthを使用
         self.splash_height = None  # activate時にpyxel.heightを使用
-
-        # RGB→Pyxelカラー変換用LUT
-        self._init_color_lookup_table()
+        self.image_cache = ImageCache(memory_limit=4)
 
         # 表示時間管理（pfe.cfgから取得、1-5秒）
         splash_time_seconds = self.config.get_splash_time()
@@ -47,47 +45,6 @@ class Splash(UIScreen):
     def deactivate(self):
         """Called when screen becomes inactive."""
         super().deactivate()
-
-    def _init_color_lookup_table(self):
-        """RGB→Pyxelカラー変換用LUT（高速化）"""
-        # Pyxelカラーパレット
-        palette = [
-            (0, 0, 0), (43, 51, 95), (126, 32, 114), (25, 149, 156),
-            (139, 72, 82), (57, 92, 152), (169, 193, 255), (238, 238, 238),
-            (212, 24, 108), (211, 132, 65), (233, 195, 91), (112, 198, 169),
-            (118, 150, 222), (163, 163, 163), (255, 151, 152), (237, 199, 176),
-        ]
-
-        # 32x32x32のLUT（RGBを8→5ビットに量子化）
-        self.color_lut = {}
-        for r5 in range(32):
-            for g5 in range(32):
-                for b5 in range(32):
-                    # 5ビット値を8ビット値に変換
-                    r = (r5 * 255) // 31
-                    g = (g5 * 255) // 31
-                    b = (b5 * 255) // 31
-
-                    # 最も近いPyxelカラーを検索
-                    min_distance = float('inf')
-                    nearest_color = 0
-
-                    for i, (pr, pg, pb) in enumerate(palette):
-                        distance = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2
-                        if distance < min_distance:
-                            min_distance = distance
-                            nearest_color = i
-
-                    self.color_lut[(r5, g5, b5)] = nearest_color
-
-    def _rgb_to_pyxel_color(self, r: int, g: int, b: int) -> int:
-        """RGBを最も近いPyxelカラーに変換"""
-        # 8ビット→5ビットに量子化
-        r5 = (r * 31) // 255
-        g5 = (g * 31) // 255
-        b5 = (b * 31) // 255
-
-        return self.color_lut.get((r5, g5, b5), 0)
 
     def _load_splash_image(self):
         """スプラッシュ画像をロード"""
@@ -114,21 +71,8 @@ class Splash(UIScreen):
             return
 
         try:
-            # 画像を読み込んでリサイズ
-            img = Image.open(splash_path)
-            img = img.resize((self.splash_width, self.splash_height), Image.Resampling.BILINEAR)
-            img = img.convert('RGB')
-            pixels = img.load()
-
-            # Pyxelイメージバンクに保存
-            pyxel_img = pyxel.image(self.splash_image_bank)
-            for y in range(self.splash_height):
-                for x in range(self.splash_width):
-                    r, g, b = pixels[x, y]
-                    color = self._rgb_to_pyxel_color(r, g, b)
-                    pyxel_img.pset(x, y, color)
-
-            self.splash_loaded = True
+            self.splash_image = self.image_cache.get(splash_path, self.splash_width, self.splash_height)
+            self.splash_loaded = self.splash_image is not None
             print(f"Splash image loaded: {splash_path}")
 
         except Exception as e:
@@ -142,7 +86,7 @@ class Splash(UIScreen):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # フレームカウント
         self.display_frames += 1
@@ -161,7 +105,7 @@ class Splash(UIScreen):
 
     def _close_splash(self):
         """スプラッシュ画面を閉じて次の画面へ"""
-        from state_manager import AppState
+        from pfe_app.state_manager import AppState
 
         # セッション復元で保存された状態があればそれに遷移、なければMAIN_MENU
         post_splash_state = self.state_manager.get_data('post_splash_state')
@@ -185,8 +129,8 @@ class Splash(UIScreen):
         pyxel.cls(bg_color)
 
         # スプラッシュ画像を描画
-        if self.splash_loaded:
-            pyxel.blt(0, 0, self.splash_image_bank, 0, 0, self.splash_width, self.splash_height)
+        if self.splash_loaded and self.splash_image is not None:
+            pyxel.blt(0, 0, self.splash_image.image, 0, 0, self.splash_image.width, self.splash_image.height)
         else:
             # 画像がない場合はデフォルトテキスト
             text = "PFE - ROM Launcher"

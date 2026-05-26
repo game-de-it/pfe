@@ -46,6 +46,9 @@ data/core_history.json
 data/settings.json
 data/cache.json
 data/session.json
+data/image_cache/
+data/pfe_generated.pyxpal
+data/pfe.cfg_*
 
 # User-specific config (uncomment if you want to ignore personal configs)
 # data/pfe.cfg
@@ -73,9 +76,16 @@ assets/screenshots/*.png
 assets/screenshots/*.jpg
 assets/screenshots/*.jpeg
 
+# Local BGM drops
+assets/bgm/*.mp3
+!assets/bgm/PFE_BGM_*.mp3
+
 # Logs
 *.log
 
 # Backup files
 *.bak
 *.backup
+
+# Local helpers
+bin/tooles.sh

@@ -3,7 +3,7 @@ Software keyboard for character input.
 """
 
 import pyxel
-from theme_manager import get_theme_manager
+from pfe_app.theme_manager import get_theme_manager
 
 
 class SoftKeyboard:

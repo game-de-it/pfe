@@ -1,331 +1,288 @@
 # Installation Instructions
 
+This document covers the general Linux/PC installation flow.
+
+For ROCKNIX, use the dedicated [ROCKNIX setup guide](docs/ROCKNIX_JP.md). ROCKNIX setup is based on copying `tools/rocknix/ports/` to `/roms/ports/` and launching scripts from EmulationStation Ports.
+
 ## Requirements
 
-* Python 3.8 or higher
-* pip
-* RetroArch (or other emulators such as PPSSPP)
+- Python 3.8 or higher
+- pip
+- RetroArch, PPSSPP, or other emulators you want to use
+- ROM files
 
-## Steps
+## 1. Install Dependencies
 
-### 1. Install Dependencies
+Recommended:
 
 ```bash
-pip install -r requirements.txt
+./scripts/install_deps.sh
 ```
 
-Or install individually:
+With a specific Python:
 
 ```bash
-pip install pyxel>=2.2.7
+PFE_PYTHON=/path/to/python3 ./scripts/install_deps.sh
+```
+
+Manual install:
+
+```bash
+pip install "pyxel>=2.9.5"
 pip install Pillow>=10.0.0
 pip install pyxel-universal-font>=0.2.0
-pip install pygame>=2.0.0  # for BGM playback
+pip install pygame>=2.0.0
 ```
 
-### 2. Prepare Configuration File
+`scripts/install_deps.sh` also avoids pip bytecode issues seen on some ROCKNIX/plumOS Python builds, so it is the preferred path.
 
-Copy the sample configuration file:
+## 2. Prepare Configuration
+
+Copy the sample config:
 
 ```bash
 cp data/pfe.cfg.example data/pfe.cfg
 ```
 
-Edit `data/pfe.cfg` to set the ROM directory and emulator paths:
+Set your ROM path and launcher scripts:
 
 ```ini
-; Global settings
 ROM_BASE=/path/to/your/roms
 
-; Emulator settings
-; TYPE_RA: RetroArch launcher script (receives <core_filename> <rom_path>)
 TYPE_RA=./bin/retroarch.sh
 
-; TYPE_SA_*: Standalone emulator (receives <rom_path> only)
-;TYPE_SA_PPSSPP=/usr/local/bin/ppsspp.sh
+; Optional standalone launchers
+;TYPE_SA_PPSSPP=./bin/ppsspp.sh
+;TYPE_SA_YABASANSHIRO=./bin/yabasanshiro.sh
+```
 
-; Debug (set to true if issues occur)
-DEBUG=false
+Define systems with `-TITLE`, `-DIR`, `-EXT`, and `-CORE`.
 
-; Category definitions
+```ini
 -TITLE=Famicom
 -DIR=nes
 -EXT=nes,fds
 -CORE=nestopia,fceumm
 
--TITLE=Super Famicom
--DIR=snes
--EXT=sfc,smc
--CORE=snes9x
-
-; Example of standalone emulator
-;-TITLE=PSP
-;-DIR=psp
-;-EXT=iso,cso,pbp
-;-CORE=SA:PPSSPP
+-TITLE=PSP
+-DIR=psp
+-EXT=iso,cso,pbp
+-CORE=SA:PPSSPP
 ```
 
-For detailed configuration options, see `data/pfe.cfg.example`.
+Relative `-DIR` values are resolved under `ROM_BASE`. Plain core names use RetroArch. `SA:NAME` uses `TYPE_SA_NAME`.
 
-### 2.5. Prepare Launcher Scripts
+See `data/pfe.cfg.example` for all available options.
 
-PFE launches emulators via external scripts.
+## 3. Emulator Launcher Scripts
 
-#### Example Script for RetroArch (`bin/retroarch.sh`)
+PFE delegates emulator startup to external scripts.
+
+Bundled examples:
+
+```txt
+bin/retroarch.sh
+bin/ppsspp.sh
+bin/yabasanshiro.sh
+bin/drastic.sh
+bin/pyxel.sh
+```
+
+Make scripts executable:
 
 ```bash
-#!/bin/bash
-# Args: $1=core filename, $2=ROM path
-CORE_PATH="/path/to/retroarch/cores"
-retroarch -L "${CORE_PATH}/$1" "$2"
+chmod +x bin/*.sh scripts/*.sh
 ```
 
-#### Example Script for Standalone Emulator
+RetroArch scripts receive:
 
-```bash
-#!/bin/bash
-# Args: $1=ROM path
-/usr/local/bin/ppsspp "$1"
+```txt
+bin/retroarch.sh <core_path_or_filename> <rom_path>
 ```
 
-Give scripts executable permission:
+Standalone scripts usually receive only the ROM path:
 
-```bash
-chmod +x bin/retroarch.sh
+```txt
+bin/ppsspp.sh <rom_path>
 ```
 
-#### WiFi / System Scripts
+Edit `bin/*.sh` or point `TYPE_RA` / `TYPE_SA_*` to your own scripts as needed.
 
-PFE includes the following scripts:
+## 4. Assets
 
+### BGM
+
+The default BGM directory is `assets/bgm/`.
+
+```txt
+assets/bgm/
+  song1.mp3
+  song2.ogg
 ```
-scripts/
-├── wifi_scan.sh        # Scan WiFi networks
-├── wifi_connect.sh     # Connect to WiFi
-├── wifi_status.sh      # Get WiFi power status
-├── wifi_toggle.sh      # Turn WiFi ON/OFF
-├── get_brightness.sh   # Get screen brightness
-└── set_brightness.sh   # Set screen brightness
-```
 
-These scripts are configured in `data/pfe.cfg`:
+Override it with:
 
 ```ini
-WIFI_SCAN_SCRIPT=./scripts/wifi_scan.sh
-WIFI_CONNECT_SCRIPT=./scripts/wifi_connect.sh
-WIFI_STATUS_SCRIPT=./scripts/wifi_status.sh
-WIFI_TOGGLE_SCRIPT=./scripts/wifi_toggle.sh
+BGM_DIR=./assets/bgm
 ```
 
-You can also customize the scripts according to your environment.
+### Screenshots
 
-### 3. Prepare Assets (Optional)
+The default screenshot directory is `assets/screenshots/`. You can override it with `SCREENSHOT_DIR`.
 
-#### Splash Image
-
-Place `assets/splash.png` or `assets/splash.jpg` to display at startup.
-
-#### BGM
-
-Place `assets/bgm.mp3` to enable BGM playback. Can be toggled On/Off in the Settings screen.
-
-#### Screenshots
-
-To display screenshots in the ROM selection screen:
-
+```ini
+SCREENSHOT_DIR=assets/screenshots
 ```
+
+Basic layout:
+
+```txt
 assets/screenshots/
-├── nes/
-│   ├── Game Name.png  # same name as ROM file
-│   └── ...
-├── snes/
-│   └── ...
+  nes/
+    Game Name.png
+  snes/
+    Another Game.png
 ```
 
-#### Custom Fonts
+Screenshot filenames should match ROM filenames without the extension.
 
-To use Japanese fonts:
+### Splash Image
 
-* Place font files in `assets/fonts/`
-* Add to `data/pfe.cfg`: `FONT_PATH=assets/fonts/your-font.ttf`
+Optional startup images:
 
-Recommended fonts:
+```txt
+assets/splash.png
+assets/splash.jpg
+```
 
-* Misaki Font (8x8): [http://littlelimit.net/misaki.htm](http://littlelimit.net/misaki.htm)
-* Noto Sans CJK: [https://fonts.google.com/noto/specimen/Noto+Sans+JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP)
+### Fonts
 
-### 4. Launch
+To force a specific Japanese font:
 
-#### Recommended: Auto-Restart Script
+```ini
+FONT_PATH=assets/fonts/your-font.ttf
+BDF_FONT_PATH=assets/fonts/umplus_j10r.bdf
+```
+
+If omitted, PFE tries to detect a usable font automatically.
+
+## 5. Launch
+
+Recommended:
 
 ```bash
-chmod +x launcher.sh
 ./launcher.sh
 ```
 
-Returns to the launcher automatically after the game ends.
+`launcher.sh` handles the environment and returns to PFE after game exit.
 
-#### Direct Launch (Manual Restart Required)
+Direct launch:
 
 ```bash
 python3 main.py
 ```
 
-## Linux (Embedded) Settings
-
-### launcher.sh Configuration
-
-If using ALSA audio, set environment variables in `launcher.sh`:
+With a specific Python:
 
 ```bash
-export SDL_AUDIODRIVER=alsa
-export SDL_GAMECONTROLLERCONFIG="..."  # Controller configuration
+PFE_PYTHON=/path/to/python3 ./launcher.sh
 ```
 
-### Auto-Start Setup
+## 6. OS Integration Scripts
 
-To start the launcher automatically at system startup:
+WiFi, brightness, battery, CPU governor, reboot, and shutdown actions are handled by scripts in `scripts/`.
+
+Examples:
+
+```txt
+scripts/wifi_scan.sh
+scripts/wifi_connect.sh
+scripts/get_battery.sh
+scripts/get_brightness.sh
+scripts/set_brightness.sh
+scripts/get_cpu_governor.sh
+scripts/set_cpu_governor.sh
+scripts/system_reboot.sh
+scripts/system_shutdown.sh
+```
+
+These scripts may need customization for your OS. See `scripts/samples/` for examples.
+
+Normal users may need sudoers rules for WiFi or power actions:
 
 ```bash
-# Add to ~/.bashrc or /etc/rc.local
-cd /path/to/pd && ./launcher.sh
+echo "username ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/pfe-wifi
+sudo chmod 440 /etc/sudoers.d/pfe-wifi
 ```
 
-### CPU Governor
+## 7. Autostart
 
-Changing CPU governor requires write permissions to system files:
+Minimal systemd example:
 
-```bash
-# Check permissions
-ls -la /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
+```ini
+[Unit]
+Description=PFE Frontend
 
-# Add udev rules if necessary
+[Service]
+Type=simple
+WorkingDirectory=/path/to/pfe
+ExecStart=/bin/bash /path/to/pfe/launcher.sh
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
 ```
 
-### WiFi Permission
-
-To connect to WiFi as a normal user, sudo permission for nmcli is required:
-
-```bash
-echo "ark ALL=(ALL) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/wifi
-sudo chmod 440 /etc/sudoers.d/wifi
-```
-
-### Reboot / Shutdown Permission
-
-To allow a normal user to reboot/shutdown:
-
-```bash
-echo "ark ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /sbin/reboot, /sbin/poweroff" | sudo tee /etc/sudoers.d/power
-sudo chmod 440 /etc/sudoers.d/power
-```
-
-**Note**: Replace `ark` with your actual username.
+ROCKNIX uses `02_install_pfe.sh` instead; see [ROCKNIX setup guide](docs/ROCKNIX_JP.md).
 
 ## Troubleshooting
 
-### pyxel-universal-font Cannot Be Installed
+### PFE Does Not Start
 
 ```bash
-pip install --upgrade pip
-pip install pyxel-universal-font
+./scripts/install_deps.sh
+python3 -m compileall -q main.py pfe_app ui
+tail -n 80 data/debug.log
 ```
+
+If `pfe_app` is missing, copy the whole PFE directory tree again.
+
+### ROMs Do Not Appear
+
+- Check `ROM_BASE` and `-DIR`
+- Check that `-EXT` includes your ROM extension
+- Check directory permissions
+
+### Games Do Not Launch
+
+- Check `TYPE_RA` and `TYPE_SA_*`
+- Check script executable permissions
+- Check RetroArch core paths
+- Read `data/debug.log`
 
 ### BGM Does Not Play
 
-1. Check if pygame is installed:
+- Check `BGM_DIR`
+- Check that supported audio files exist
+- Check BGM is enabled in Settings
+- Check pygame is installed
 
-   ```bash
-   pip install pygame
-   ```
+### Screenshots Do Not Appear
 
-2. Confirm `SDL_AUDIODRIVER` is exported in `launcher.sh`:
+- Check `SCREENSHOT_DIR`
+- Check system subdirectory names
+- Check screenshot filenames match ROM names
 
-   ```bash
-   export SDL_AUDIODRIVER=alsa
-   ```
+### WiFi or Power Actions Fail
 
-3. Confirm `assets/bgm.mp3` exists
+- Check that `scripts/*.sh` match your OS
+- Check required commands are installed
+- Check sudoers or other permission settings
 
-4. Make sure BGM is On in the Settings screen
+### Debug Logs
 
-### Font Does Not Display
-
-1. Check the font path
-2. Confirm font file exists
-3. Set `DEBUG=true` and check startup logs
-
-### Screen Does Not Display
-
-1. Confirm Pyxel is installed correctly
-2. Check graphics driver is up-to-date
-3. Verify SDL environment variables
-
-### Launcher Does Not Return After Game
-
-1. Make sure using `launcher.sh`
-2. Check permissions of session file (`data/session.json`)
-
-### Cannot Change CPU Governor
-
-1. Check path:
-
-   ```bash
-   cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-   ```
-
-2. Set `CPU_GOVERNOR_PATH` in `pfe.cfg`:
-
-   ```ini
-   CPU_GOVERNOR_PATH=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
-   ```
-
-3. Confirm write permissions to the file
-
-### WiFi Connection Fails
-
-1. Check debug log:
-
-   ```bash
-   cat data/debug.log
-   ```
-
-2. Verify nmcli works:
-
-   ```bash
-   nmcli device wifi list
-   ```
-
-3. Add sudoers rule if permission error occurs (see WiFi Permission above)
-
-4. If `Insufficient privileges` appears:
-
-   * Happens when running via systemd service
-   * sudoers configuration is required
-
-### Reboot / Shutdown Does Not Work
-
-1. Check debug log:
-
-   ```bash
-   tail -20 data/debug.log
-   ```
-
-2. Add sudoers rule if permission error occurs (see Reboot / Shutdown Permission above)
-
-### Checking Debug Logs
-
-Setting `DEBUG=true` outputs logs to `data/debug.log`:
+Set `DEBUG=true` in `data/pfe.cfg` for more logs.
 
 ```bash
-# Check logs in real-time
 tail -f data/debug.log
-
-# Check latest log
-cat data/debug.log
 ```
-
-If running as a systemd service, logs may not appear in the console, so file logs are useful for diagnosing issues.
-
----
-

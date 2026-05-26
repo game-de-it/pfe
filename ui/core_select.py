@@ -6,8 +6,8 @@ import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText
 from ui.window import DQWindow
-from japanese_text import draw_japanese_text
-from theme_manager import get_theme_manager
+from pfe_app.japanese_text import draw_japanese_text
+from pfe_app.theme_manager import get_theme_manager
 
 
 class CoreSelect(ScrollableList):
@@ -78,7 +78,7 @@ class CoreSelect(ScrollableList):
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Navigation
         if self.input_handler.is_pressed_with_repeat(Action.UP):

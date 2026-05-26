@@ -1,18 +1,17 @@
 """
-Key Config Menu - submenu for button layout and key mapping settings.
+Key Config Menu - submenu for key mapping settings.
 """
 
 import pyxel
 from ui.base import ScrollableList
 from ui.components import StatusBar, HelpText
 from ui.window import DQWindow
-from japanese_text import draw_japanese_text, get_japanese_text_width
-from theme_manager import get_theme_manager
-from debug import debug_print
+from pfe_app.japanese_text import draw_japanese_text
+from pfe_app.theme_manager import get_theme_manager
 
 
 class KeyConfigMenu(ScrollableList):
-    """Key Config submenu containing Btn Layout and Key Mapping."""
+    """Key Config submenu containing the key mapping wizard."""
 
     def __init__(self, input_handler, state_manager, persistence):
         super().__init__(items_per_page=8)
@@ -22,16 +21,9 @@ class KeyConfigMenu(ScrollableList):
         self.status_bar = StatusBar(138, 160)
         self.help_text = HelpText(146, 160)
 
-        # Load current button layout from settings
-        settings = self.persistence.load_settings()
-        button_layout = settings.get("button_layout", "NINTENDO")
-        button_layout_values = ["NINTENDO", "XBOX"]
-        button_layout_index = button_layout_values.index(button_layout) if button_layout in button_layout_values else 0
-
         # Menu items
         self.menu_items = [
-            {"name": "Btn Layout", "type": "toggle", "key": "button_layout", "values": button_layout_values, "current": button_layout_index},
-            {"name": "Key Mapping", "type": "submenu", "key": "key_mapping"},
+            {"name": "Key Mapping Wizard", "type": "submenu", "key": "key_mapping"},
         ]
 
         self.set_items(self.menu_items)
@@ -40,18 +32,8 @@ class KeyConfigMenu(ScrollableList):
         """Called when screen becomes active."""
         super().activate()
 
-        # Reload settings
-        settings = self.persistence.load_settings()
-        button_layout = settings.get("button_layout", "NINTENDO")
-        for item in self.menu_items:
-            if item["key"] == "button_layout":
-                if button_layout in item["values"]:
-                    item["current"] = item["values"].index(button_layout)
-                break
-
         # Set help text
         self.help_text.set_controls([
-            ("Left/Right", "Change"),
             ("A", "Select"),
             ("B", "Back")
         ])
@@ -60,20 +42,12 @@ class KeyConfigMenu(ScrollableList):
         """Called when screen becomes inactive."""
         super().deactivate()
 
-    def _save_settings(self):
-        """Save settings to file."""
-        settings = self.persistence.load_settings()
-        for item in self.menu_items:
-            if item["type"] == "toggle":
-                settings[item["key"]] = item["values"][item["current"]]
-        self.persistence.save_settings(settings)
-
     def update(self):
         """Update key config menu logic."""
         if not self.active:
             return
 
-        from input_handler import Action
+        from pfe_app.input_handler import Action
 
         # Navigation
         if self.input_handler.is_pressed_with_repeat(Action.UP):
@@ -81,37 +55,12 @@ class KeyConfigMenu(ScrollableList):
         elif self.input_handler.is_pressed_with_repeat(Action.DOWN):
             self.scroll_down()
 
-        # Change setting value
         selected = self.get_selected_item()
-        if selected and selected["type"] == "toggle":
-            changed = False
-            if self.input_handler.is_pressed(Action.LEFT):
-                selected["current"] = (selected["current"] - 1) % len(selected["values"])
-                changed = True
-
-                # Apply immediately
-                if selected["key"] == "button_layout":
-                    button_layout = selected["values"][selected["current"]]
-                    self.input_handler.set_button_layout(button_layout)
-                    debug_print(f"Button layout changed to: {button_layout}")
-
-            elif self.input_handler.is_pressed(Action.RIGHT):
-                selected["current"] = (selected["current"] + 1) % len(selected["values"])
-                changed = True
-
-                # Apply immediately
-                if selected["key"] == "button_layout":
-                    button_layout = selected["values"][selected["current"]]
-                    self.input_handler.set_button_layout(button_layout)
-                    debug_print(f"Button layout changed to: {button_layout}")
-
-            if changed:
-                self._save_settings()
 
         # Enter submenu
         if self.input_handler.is_pressed(Action.A):
             if selected and selected["key"] == "key_mapping":
-                from state_manager import AppState
+                from pfe_app.state_manager import AppState
                 self.state_manager.change_state(AppState.KEY_CONFIG)
 
         # Back
@@ -138,7 +87,7 @@ class KeyConfigMenu(ScrollableList):
         pyxel.text(2, 2, title, text_selected_color)
 
         # Draw subtitle
-        subtitle = "Button Settings"
+        subtitle = "Button Mapping"
         subtitle_x = pyxel.width // 2 - len(subtitle) * 2
         pyxel.text(subtitle_x, 10, subtitle, text_color)
 
@@ -160,14 +109,7 @@ class KeyConfigMenu(ScrollableList):
             color = text_selected_color if index == self.selected_index else text_color
             draw_japanese_text(6, y, item["name"], color)
 
-            # Draw value
-            if item["type"] == "toggle":
-                display_value = item["values"][item["current"]]
-                value_text = f"< {display_value} >"
-                value_width = get_japanese_text_width(value_text)
-                value_x = pyxel.width - 10 - value_width
-                draw_japanese_text(value_x, y, value_text, color)
-            elif item["type"] == "submenu":
+            if item["type"] == "submenu":
                 submenu_x = pyxel.width - 30
                 draw_japanese_text(submenu_x, y, ">", color)
 

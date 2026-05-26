@@ -6,6 +6,7 @@
     "text_selected": 8,
     "border": 0,
     "border_accent": 12,
+    "gallery_cursor": 8,
     "scrollbar": 12,
     "status_bg": 13,
     "help_bg": 13,

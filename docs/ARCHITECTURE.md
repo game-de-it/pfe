@@ -15,7 +15,7 @@ PFE is a ROM launcher built on Pyxel (a retro game engine). It is primarily desi
 
 ### Tech Stack
 - **Python 3.x**
-- **Pyxel 2.2.7**: Graphics rendering engine
+- **Pyxel 2.9.5**: Graphics rendering engine (verified)
 - **Pillow**: Image processing
 - **pygame**: BGM playback (lazy loading)
 - **pyxel-universal-font**: Japanese font support
@@ -25,23 +25,30 @@ PFE is a ROM launcher built on Pyxel (a retro game engine). It is primarily desi
 ## 2. Directory Structure
 
 ```
-pd/
+pfe/
 ├── main.py                    # Entry point / main application
-├── launcher.py                # ROM launch system
-├── config.py                  # Configuration file parser (pfe.cfg)
-├── state_manager.py           # UI state management (state machine)
-├── input_handler.py           # Input handling (keyboard / gamepad)
-├── persistence.py             # Data persistence (JSON)
-├── rom_manager.py             # ROM file scanning / filtering
-├── theme_manager.py           # Color theme management
-├── bgm_manager.py             # BGM playback management
-├── system_monitor.py          # System status monitoring (battery / network)
-├── brightness_manager.py      # Screen brightness control
-├── japanese_text.py           # Japanese text rendering
-├── screenshot_loader.py       # Screenshot loading
-├── music_mode.py              # Music playback mode
-├── debug.py                   # Debug logging utility
-├── version.py                 # Version information
+├── launcher.sh                # PFE launch/restart shell wrapper
+├── pfe_app/                   # Internal application package
+│   ├── __init__.py            # Package marker
+│   ├── launcher.py            # ROM launch system
+│   ├── config.py              # Configuration file parser (pfe.cfg)
+│   ├── state_manager.py       # UI state management (state machine)
+│   ├── input_handler.py       # Input handling (keyboard / gamepad)
+│   ├── persistence.py         # Data persistence (JSON)
+│   ├── rom_manager.py         # ROM file scanning / filtering
+│   ├── theme_manager.py       # Color theme management
+│   ├── bgm_manager.py         # BGM playback management
+│   ├── bgm_worker.py          # BGM worker process
+│   ├── image_cache.py         # Image loading/cache
+│   ├── palette_manager.py     # Pyxel palette management
+│   ├── script_runner.py       # External script execution
+│   ├── system_monitor.py      # System status monitoring (battery / network)
+│   ├── brightness_manager.py  # Screen brightness control
+│   ├── japanese_text.py       # Japanese text rendering
+│   ├── screenshot_loader.py   # Screenshot loading
+│   ├── music_mode.py          # Music playback mode
+│   ├── debug.py               # Debug logging utility
+│   └── version.py             # Version information
 │
 ├── ui/                        # UI components
 │   ├── base.py                # Base classes (UIScreen, ScrollableList)
@@ -58,16 +65,21 @@ pd/
 │   ├── search.py              # ROM search
 │   ├── settings.py            # Settings menu
 │   ├── wifi_settings.py       # WiFi settings
+│   ├── bluetooth_settings.py  # Bluetooth settings
 │   ├── key_config_menu.py     # Key config menu
 │   ├── key_config.py          # Key mapping screen
 │   ├── bgm_config.py          # BGM settings
 │   ├── datetime_settings.py   # Date / time settings
 │   ├── statistics.py          # Play statistics
+│   ├── image_cache_screen.py  # Image cache management
+│   ├── help_screen.py         # Help screen
 │   ├── about.py               # About screen
 │   └── quit_menu.py           # Quit dialog
 │
 ├── data/                      # Configuration / data files
 │   ├── pfe.cfg                # Main configuration file
+│   ├── pfe.cfg.example        # Example configuration
+│   ├── pfe.retro.cfg.example  # retroarch.cfg-style example
 │   ├── session.json           # Session state (generated at runtime)
 │   ├── settings.json          # User settings (generated at runtime)
 │   ├── favorites.json         # Favorites list
@@ -90,11 +102,23 @@ pd/
 │   └── ...                    # Other system scripts
 │
 ├── bin/                       # External binaries
-│   └── retroarch.sh           # RetroArch launcher
+│   ├── retroarch.sh           # RetroArch launcher
+│   ├── pyxel.sh               # Pyxel game launcher
+│   ├── rocknix_runemu.sh      # ROCKNIX runemu bridge
+│   ├── ppsspp.sh              # PPSSPP launcher
+│   ├── drastic.sh             # DraStic launcher
+│   └── yabasanshiro.sh        # Yabasanshiro launcher
+│
+├── tools/rocknix/             # ROCKNIX install/sync tools
+│   ├── ports/                 # Entry scripts copied to /roms/ports
+│   ├── sync_pfe_from_es_systems.py
+│   └── README_JP.md
 │
 └── docs/                      # Documentation
     ├── ARCHITECTURE.md        # This file
-    └── ARCHITECTURE_JP.md     # Japanese version
+    ├── ARCHITECTURE_JP.md     # Japanese version
+    ├── ROCKNIX_JP.md          # ROCKNIX setup guide
+    └── RELEASE_JP.md          # ROCKNIX release checklist
 ```
 
 ---
@@ -162,11 +186,14 @@ class AppState(Enum):
     SEARCH            = "search"            # Search
     SETTINGS          = "settings"          # Settings
     WIFI_SETTINGS     = "wifi_settings"     # WiFi settings
+    BLUETOOTH_SETTINGS = "bluetooth_settings" # Bluetooth settings
     KEY_CONFIG_MENU   = "key_config_menu"   # Key config menu
     KEY_CONFIG        = "key_config"        # Key mapping
     BGM_CONFIG        = "bgm_config"        # BGM settings
     DATETIME_SETTINGS = "datetime_settings" # Date / time settings
     STATISTICS        = "statistics"        # Statistics
+    IMAGE_CACHE       = "image_cache"       # Image cache
+    HELP              = "help"              # Help
     ABOUT             = "about"             # About
     QUIT_MENU         = "quit_menu"         # Quit confirmation
 ```
@@ -211,9 +238,13 @@ category_positions = {
 ; ========================================
 ROM_BASE=/roms                              ; ROM base directory
 TYPE_RA=./bin/retroarch.sh                  ; RetroArch launcher
-TYPE_SA_PPSSPP=/usr/local/bin/ppsspp        ; Standalone emulator
-CORE_PATH=/home/ark/.config/retroarch/cores ; Core library path
-DEBUG=true                                  ; Debug mode
+TYPE_PYXEL=./bin/pyxel.sh                   ; Pyxel game launcher
+TYPE_SA_PPSSPP=./bin/ppsspp.sh              ; Standalone emulator
+CORE_PATH=/usr/lib/libretro                 ; Optional RetroArch core directory
+RA_LAUNCH_MODE=direct                       ; direct / runemu
+RESUME_AFTER_GAME=true                      ; Resume PFE after game exit
+PYXEL_LAUNCH_MODE=handoff                   ; Temporarily exit PFE for Pyxel
+DEBUG=false                                 ; Debug mode
 
 ; Asset directories
 SCREENSHOT_DIR=assets/screenshots           ; Screenshots
@@ -222,11 +253,16 @@ BGM_DIR=assets/bgm                          ; BGM files
 ; System scripts
 BATTERY_SCRIPT=./scripts/get_battery.sh
 NETWORK_SCRIPT=./scripts/get_network.sh
+BT_SCAN_SCRIPT=./scripts/bt_scan.sh
+DATETIME_SET_SCRIPT=./scripts/set_datetime.sh
+RESTART_PFE_SCRIPT=./scripts/restart_pfe.sh
+SWITCH_TO_ES_SCRIPT=./scripts/switch_to_es.sh
 
 ; ========================================
 ; Category definitions
 ; ========================================
 -TITLE=Nintendo Entertainment System        ; Display name
+-SYSTEM=nes                                 ; ES/ROCKNIX system id
 -TITLE_IMG=./assets/title/Fc_2.png          ; Title image
 -DIR=nes                                    ; ROM directory (relative/absolute)
 -EXT=nes,NES,zip,ZIP                        ; Supported extensions
@@ -243,8 +279,11 @@ NETWORK_SCRIPT=./scripts/get_network.sh
 ### 5.3 Core Path Resolution
 
 ```
--CORE=nestopia           → CORE_PATH/nestopia_libretro.so
+-CORE=nestopia           → CORE_PATH/nestopia_libretro.so when CORE_PATH is set
+-CORE=nestopia           → nestopia_libretro.so is passed to the launcher when CORE_PATH is unset
 -CORE=/full/path/core.so → /full/path/core.so (absolute path)
+-CORE=SA:PPSSPP          → pass the ROM path to TYPE_SA_PPSSPP
+-CORE=pyxel:pyxel        → pass the ROM path to TYPE_PYXEL
 ```
 
 ---
@@ -311,7 +350,8 @@ Launcher.launch_rom(rom_file, category, core)
     │   ├── Add to history
     │   ├── Save core selection
     │   ├── Save session
-    │   └── Exit PFE (launcher.sh restarts)
+    │   ├── Resume inside the same PFE process when RESUME_AFTER_GAME=true
+    │   └── Exit PFE for handoff launches or RESUME_AFTER_GAME=false
     │
     └── 6. On launch failure:
         ├── Show error toast
@@ -322,9 +362,9 @@ Launcher.launch_rom(rom_file, category, core)
 
 | Type | Description | Launch Command |
 |------|-------------|----------------|
-| `RA` | RetroArch | `TYPE_RA core_path rom_path` |
-| `SA_PPSSPP` | PPSSPP | `TYPE_SA_PPSSPP rom_path` |
-| `SA:pyxel` | Pyxel app | `python rom_path` |
+| `RA` | RetroArch | `TYPE_RA core_path_or_filename rom_path` |
+| `SA:PPSSPP` | PPSSPP | `TYPE_SA_PPSSPP rom_path` |
+| `pyxel:pyxel` | Pyxel app | `TYPE_PYXEL rom_path` |
 | Custom | Config-defined | `TYPE_* rom_path` |
 
 ---
@@ -341,12 +381,11 @@ class Action(Enum):
     START, SELECT           # Special buttons
 ```
 
-### 8.2 Button Layouts
+### 8.2 Key Mapping
 
-| Layout | Confirm | Cancel |
-|--------|---------|--------|
-| Nintendo | A | B |
-| Xbox | B | A |
+PFE uses a fixed default mapping and prioritizes `keyconfig.json` when present.
+Device-specific button differences should be corrected with the Key Mapping Wizard.
+The legacy `button_layout` setting is ignored for compatibility.
 
 ### 8.3 Key Features
 
@@ -386,7 +425,6 @@ class InputHandler:
     "show_screenshots": "On",
     "sort_mode": "Name",
     "view_mode": "list",
-    "button_layout": "NINTENDO",
     "resolution": "1:1",
     "theme": "dark",
     "bgm_enabled": "On",
@@ -461,10 +499,13 @@ class ScrollableList(UIScreen):
 | Search | `Search` | ROM search |
 | Settings | `Settings` | Various settings |
 | WiFi Settings | `WiFiSettings` | Network settings |
+| Bluetooth Settings | `BluetoothSettings` | Bluetooth scanning/pairing |
 | Key Config | `KeyConfig` | Button remapping |
 | BGM Config | `BGMConfig` | Music settings |
 | Date/Time Settings | `DateTimeSettings` | System date/time settings |
 | Statistics | `Statistics` | Play statistics |
+| Image Cache | `ImageCacheScreen` | Screenshot/title image cache management |
+| Help | `HelpScreen` | Control help |
 | About | `About` | Version information |
 | Quit | `QuitMenu` | Quit confirmation |
 
@@ -638,7 +679,8 @@ Active Screen.update()
          │   └── On failure: Resume BGM
          ├── Persistence: Save history/core selection
          ├── Save session
-         └── Exit PFE → launcher.sh restarts
+         ├── Normal launch: resume in the same PFE process
+         └── Handoff launch: exit PFE → launcher.sh or systemd restarts it
                               ↓
                          Restore session
                               ↓
@@ -675,17 +717,24 @@ Render to screen
 | `get_network.sh` | Check network connection |
 | `wifi_scan.sh` | Scan available WiFi networks |
 | `wifi_connect.sh` | Connect to WiFi |
+| `bt_scan.sh` | Scan Bluetooth devices |
+| `bt_pair.sh` | Bluetooth pairing |
+| `bt_status.sh` | Get Bluetooth status |
+| `bt_toggle.sh` | Toggle Bluetooth |
 | `get_cpu_governor.sh` | Get CPU governor |
 | `set_cpu_governor.sh` | Set CPU governor |
 | `set_datetime.sh` | Set system date/time |
 | `system_reboot.sh` | System reboot |
 | `system_shutdown.sh` | System shutdown |
+| `restart_pfe.sh` | Restart PFE |
+| `switch_to_es.sh` | Switch to EmulationStation |
 
 ### 16.2 Emulator Integration
 
-- **RetroArch**: Pass core + ROM path via shell script
-- **Standalone**: Pass ROM path directly to executable
-- **Custom**: Configurable launcher
+- **RetroArch**: Pass a core name/path + ROM path to `TYPE_RA`
+- **Standalone**: Pass the ROM path to `TYPE_SA_*`
+- **Custom**: Pass the ROM path to `TYPE_*`
+- **ROCKNIX**: `bin/retroarch.sh` and `bin/rocknix_runemu.sh` use environment variables such as `PFE_SYSTEM` and `PFE_CORE_NAME` for runemu integration
 
 ---
 
@@ -736,7 +785,7 @@ DEBUG=true
 ### 19.2 Debug Logging
 
 ```python
-from debug import debug_print
+from pfe_app.debug import debug_print
 
 debug_print("[BGM] Track ended, playing next")
 # Only outputs when DEBUG is true
@@ -748,19 +797,19 @@ debug_print("[BGM] Track ended, playing next")
 
 ### 20.1 Adding a New Emulator Type
 
-1. Add a `TYPE_SA_*` variable to `pfe.cfg`
-2. Use `-CORE=SA:*` in category definitions
+1. Add a `TYPE_*` or `TYPE_SA_*` variable to `pfe.cfg`
+2. Use `-CORE=TYPE:NAME` or `-CORE=SA:NAME` in category definitions
 
 ### 20.2 Adding a New Theme
 
-1. Add to the `THEMES` dictionary in `theme_manager.py`
+1. Add to the `THEMES` dictionary in `pfe_app/theme_manager.py`
 2. Define all color keys
 
 ### 20.3 Adding a New UI Screen
 
 1. Create a new file in `ui/`
 2. Inherit from `UIScreen` or `ScrollableList`
-3. Add to `AppState` in `state_manager.py`
+3. Add to `AppState` in `pfe_app/state_manager.py`
 4. Add a lazy initialization property in `main.py`
 
 ---
@@ -793,4 +842,4 @@ The icon assets included in this project are the property of their respective cr
 
 ---
 
-*This document was auto-generated. Last updated: 2026-02-07*
+*Last updated: 2026-05-26*

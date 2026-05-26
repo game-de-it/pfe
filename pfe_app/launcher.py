@@ -16,10 +16,11 @@ Core name conversion:
 
 import subprocess
 import os
+import tempfile
 from typing import Optional, Tuple
-from config import Category
-from rom_manager import ROMFile
-from debug import debug_print
+from pfe_app.config import Category
+from pfe_app.rom_manager import ROMFile
+from pfe_app.debug import debug_print
 
 
 class Launcher:
@@ -28,8 +29,9 @@ class Launcher:
     def __init__(self, config):
         self.config = config
         self.last_error = None
-        # Get the base directory (where main.py is located)
-        self.base_dir = os.path.dirname(os.path.abspath(__file__))
+        self.last_launch_handoff = False
+        # Get the app root directory (where main.py is located).
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def _resolve_path(self, path: str) -> str:
         """
@@ -58,7 +60,7 @@ class Launcher:
         """
         if ':' in core_spec:
             parts = core_spec.split(':', 1)
-            return (parts[0].upper(), parts[1])
+            return (parts[0], parts[1])
         else:
             # No prefix - use default type (RA for backward compatibility)
             return (default_type, core_spec)
@@ -92,15 +94,16 @@ class Launcher:
             True if launch succeeded, False otherwise
         """
         self.last_error = None
+        self.last_launch_handoff = False
 
         # Stop BGM before game launch
-        from bgm_manager import get_bgm_manager
+        from pfe_app.bgm_manager import get_bgm_manager
         bgm_manager = get_bgm_manager()
         bgm_was_playing = bgm_manager.is_bgm_playing()
         debug_print(f"BGM status before game launch: playing={bgm_was_playing}, enabled={bgm_manager.is_enabled()}")
         if bgm_was_playing:
             debug_print("Stopping BGM before game launch")
-            bgm_manager.stop()
+            bgm_manager.stop(release_driver=True)
             still_playing = bgm_manager.is_bgm_playing()
             debug_print(f"BGM stopped successfully: {not still_playing}")
 
@@ -129,13 +132,13 @@ class Launcher:
 
         # Launch based on type
         result = False
-        if launcher_type == "RA":
-            result = self._launch_retroarch(rom_file, launcher_name)
-        elif launcher_type == "SA":
-            result = self._launch_standalone(rom_file, launcher_name)
+        if launcher_type.upper() == "RA":
+            result = self._launch_retroarch(rom_file, category, launcher_name, core)
+        elif launcher_type.upper() == "SA":
+            result = self._launch_standalone(rom_file, category, launcher_name, core)
         else:
             # Try as custom type (e.g., PPSSPP -> TYPE_PPSSPP)
-            result = self._launch_custom(rom_file, launcher_type)
+            result = self._launch_custom(rom_file, category, launcher_type, launcher_name, core)
 
         # Post-launch processing
         debug_print(f"Game exited. result={result}, BGM was_playing={bgm_was_playing}, enabled={bgm_manager.is_enabled()}")
@@ -149,7 +152,47 @@ class Launcher:
 
         return result
 
-    def _launch_retroarch(self, rom_file: ROMFile, core_name: str) -> bool:
+    def _get_category_system_id(self, category: Category) -> str:
+        """Return the EmulationStation/ROCKNIX system id for a category."""
+        if getattr(category, "system_id", ""):
+            return category.system_id
+        directory = getattr(category, "directory", "") or ""
+        if directory:
+            return os.path.basename(os.path.normpath(directory))
+        return category.name
+
+    def _build_launch_env(
+        self,
+        category: Category,
+        launcher_type: str,
+        launcher_name: str,
+        core_spec: str,
+        core_arg: str = "",
+    ) -> dict:
+        """Build environment values consumed by device-specific launcher scripts."""
+        env = {
+            "PFE_CATEGORY_NAME": category.name,
+            "PFE_SYSTEM": self._get_category_system_id(category),
+            "PFE_ROM_DIR": getattr(category, "directory", "") or "",
+            "PFE_LAUNCHER_TYPE": launcher_type,
+            "PFE_EMULATOR": "retroarch" if launcher_type.upper() == "RA" else launcher_type,
+            "PFE_CORE_NAME": launcher_name,
+            "PFE_CORE_SPEC": core_spec,
+        }
+        if core_arg:
+            env["PFE_CORE_ARG"] = core_arg
+        ra_launch_mode = getattr(self.config, "global_vars", {}).get("RA_LAUNCH_MODE", "")
+        if ra_launch_mode:
+            env["PFE_RA_LAUNCH_MODE"] = ra_launch_mode
+        return env
+
+    def _launch_retroarch(
+        self,
+        rom_file: ROMFile,
+        category: Category,
+        core_name: str,
+        core_spec: str,
+    ) -> bool:
         """
         Launch ROM with RetroArch.
 
@@ -186,9 +229,16 @@ class Launcher:
         # Build command: script core_path rom_path
         command = [ra_path, core_full_path, rom_file.path]
 
-        return self._execute_command(command, ra_path)
+        env = self._build_launch_env(category, "RA", core_name, core_spec, core_full_path)
+        return self._execute_command(command, ra_path, env=env)
 
-    def _launch_standalone(self, rom_file: ROMFile, emulator_name: str) -> bool:
+    def _launch_standalone(
+        self,
+        rom_file: ROMFile,
+        category: Category,
+        emulator_name: str,
+        core_spec: str,
+    ) -> bool:
         """
         Launch ROM with standalone emulator.
 
@@ -213,9 +263,20 @@ class Launcher:
         # Build command: script rom_path
         command = [emu_path, rom_file.path]
 
-        return self._execute_command(command, emu_path)
+        env = self._build_launch_env(category, "SA", emulator_name, core_spec)
+        if self._should_handoff_launch("SA", emulator_name):
+            env["PFE_LAUNCH_HANDOFF"] = "1"
+            self.last_launch_handoff = True
+        return self._execute_command(command, emu_path, env=env)
 
-    def _launch_custom(self, rom_file: ROMFile, emulator_type: str) -> bool:
+    def _launch_custom(
+        self,
+        rom_file: ROMFile,
+        category: Category,
+        emulator_type: str,
+        core_name: str,
+        core_spec: str,
+    ) -> bool:
         """
         Launch ROM with custom emulator type.
 
@@ -239,9 +300,26 @@ class Launcher:
         # Build command: script rom_path
         command = [emu_path, rom_file.path]
 
-        return self._execute_command(command, emu_path)
+        env = self._build_launch_env(category, emulator_type, core_name, core_spec)
+        if self._should_handoff_launch(emulator_type, core_name):
+            env["PFE_LAUNCH_HANDOFF"] = "1"
+            self.last_launch_handoff = True
+        return self._execute_command(command, emu_path, env=env)
 
-    def _execute_command(self, command: list, executable_path: str) -> bool:
+    def _should_handoff_launch(self, emulator_type: str, core_name: str) -> bool:
+        """Return True when the launcher should exit while the game runs."""
+        if emulator_type.lower() != "pyxel" and core_name.lower() != "pyxel":
+            return False
+
+        mode = str(getattr(self.config, "global_vars", {}).get("PYXEL_LAUNCH_MODE", "handoff")).strip().lower()
+        if mode in ("handoff", "detached", "external"):
+            return True
+        if mode in ("direct", "wait", "inline", "resume"):
+            return False
+
+        return True
+
+    def _execute_command(self, command: list, executable_path: str, env: Optional[dict] = None) -> bool:
         """
         Execute a command and wait for it to complete.
 
@@ -252,28 +330,74 @@ class Launcher:
         Returns:
             True if successful
         """
+        command = self._prepare_script_command(command, executable_path)
         debug_print(f"Launching: {' '.join(command)}")
 
         try:
             import time
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL
+            process_env = os.environ.copy()
+            if env:
+                process_env.update({key: str(value) for key, value in env.items()})
+            handoff_launch = str(process_env.get("PFE_LAUNCH_HANDOFF", "")).strip().lower() in (
+                "1", "true", "yes", "on"
             )
+            with tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as stdout_file, \
+                    tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as stderr_file:
+                process = subprocess.Popen(
+                    command,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    stdin=subprocess.DEVNULL,
+                    env=process_env,
+                    start_new_session=handoff_launch,
+                )
 
-            # Brief wait to check if process started
-            time.sleep(0.1)
+                if handoff_launch:
+                    time.sleep(0.25)
+                    if process.poll() is None:
+                        debug_print("Handoff launcher is running; treating launch as scheduled.")
+                        return True
 
-            if process.poll() is not None:
-                self.last_error = f"Emulator exited immediately (code: {process.returncode})"
-                debug_print(self.last_error)
-                return False
+                    stdout_file.seek(0)
+                    stderr_file.seek(0)
+                    stdout = stdout_file.read().strip()
+                    stderr = stderr_file.read().strip()
 
-            debug_print("Waiting for emulator to close...")
-            process.wait()
-            debug_print(f"Emulator closed with exit code: {process.returncode}")
+                    if process.returncode != 0:
+                        self.last_error = f"Handoff launcher failed (code: {process.returncode})"
+                        debug_print(self.last_error)
+                        if stdout:
+                            debug_print(f"Emulator stdout: {stdout[-2000:]}")
+                        if stderr:
+                            debug_print(f"Emulator stderr: {stderr[-2000:]}")
+                        return False
+
+                    if stdout:
+                        debug_print(f"Emulator stdout: {stdout[-2000:]}")
+                    if stderr:
+                        debug_print(f"Emulator stderr: {stderr[-2000:]}")
+                    debug_print("Handoff launcher scheduled successfully.")
+                    return True
+
+                # Brief wait to check if process started
+                time.sleep(0.1)
+
+                if process.poll() is not None:
+                    stdout_file.seek(0)
+                    stderr_file.seek(0)
+                    stdout = stdout_file.read().strip()
+                    stderr = stderr_file.read().strip()
+                    self.last_error = f"Emulator exited immediately (code: {process.returncode})"
+                    debug_print(self.last_error)
+                    if stdout:
+                        debug_print(f"Emulator stdout: {stdout[-2000:]}")
+                    if stderr:
+                        debug_print(f"Emulator stderr: {stderr[-2000:]}")
+                    return False
+
+                debug_print("Waiting for emulator to close...")
+                process.wait()
+                debug_print(f"Emulator closed with exit code: {process.returncode}")
 
             return True
 
@@ -286,9 +410,23 @@ class Launcher:
             debug_print(self.last_error)
             return False
 
+    def _prepare_script_command(self, command: list, executable_path: str) -> list:
+        """Run non-executable shell scripts via sh so copied ZIP files still work."""
+        if not executable_path.endswith(".sh"):
+            return command
+        if os.access(executable_path, os.X_OK):
+            return command
+        if not command or command[0] != executable_path:
+            return command
+        return ["sh", executable_path] + command[1:]
+
     def get_last_error(self) -> Optional[str]:
         """Get the last error message."""
         return self.last_error
+
+    def should_exit_after_launch(self) -> bool:
+        """Return True when PFE should quit after scheduling a launch."""
+        return self.last_launch_handoff
 
 
 # Example usage
